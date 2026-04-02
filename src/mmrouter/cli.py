@@ -215,5 +215,65 @@ def eval_cmd(dataset, classifier_name):
         click.secho("No misclassifications.", fg="green")
 
 
+@cli.command(name="compare")
+@click.option(
+    "--dataset",
+    default="eval_data/test_set.yaml",
+    show_default=True,
+    help="Path to labeled eval dataset YAML.",
+)
+def compare_cmd(dataset):
+    """Compare all available classifiers on eval dataset."""
+    from mmrouter.eval.compare import run_comparison
+    from mmrouter.eval.evaluate import load_eval_set
+
+    try:
+        eval_set = load_eval_set(dataset)
+    except (FileNotFoundError, ValueError) as e:
+        click.secho(f"Error loading dataset: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    click.echo(f"Loaded {len(eval_set)} cases from {dataset}")
+    click.echo()
+
+    classifiers = {}
+
+    from mmrouter.classifier.rules import RuleClassifier
+    classifiers["rules"] = RuleClassifier()
+
+    try:
+        from mmrouter.classifier.embeddings import EmbeddingClassifier
+        classifiers["embeddings"] = EmbeddingClassifier()
+    except ImportError:
+        click.secho("  embeddings: skipped (sentence-transformers not installed)", fg="bright_black")
+
+    click.secho("  llm: skipped (requires API key, too slow for automated comparison)", fg="bright_black")
+
+    if not classifiers:
+        click.secho("No classifiers available.", fg="red", err=True)
+        sys.exit(1)
+
+    results = run_comparison(eval_set, classifiers)
+
+    col_name = max(len(r.name) for r in results)
+    col_name = max(col_name, len("Classifier"))
+
+    header = f"{'Classifier':<{col_name}}  {'Overall':>7}  {'Complexity':>10}  {'Category':>8}  {'Time':>6}"
+    sep = f"{'-' * col_name}  {'-' * 7}  {'-' * 10}  {'-' * 8}  {'-' * 6}"
+    click.echo(header)
+    click.echo(sep)
+
+    for r in results:
+        rep = r.report
+        row = (
+            f"{r.name:<{col_name}}"
+            f"  {rep.overall_accuracy:>7.1%}"
+            f"  {rep.complexity_accuracy:>10.1%}"
+            f"  {rep.category_accuracy:>8.1%}"
+            f"  {r.elapsed_seconds:>5.2f}s"
+        )
+        click.echo(row)
+
+
 if __name__ == "__main__":
     cli()
