@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class ChatMessage(BaseModel):
     role: str
     content: str | None = None
+    cache_control: dict | None = None
 
 
 class ChatCompletionRequest(BaseModel):

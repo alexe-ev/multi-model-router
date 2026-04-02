@@ -73,6 +73,7 @@ provider:
   max_retries: 2
   circuit_breaker_threshold: 5
   circuit_breaker_reset_ms: 60000
+  prompt_caching: true
 
 cascade:
   enabled: false

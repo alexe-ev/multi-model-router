@@ -35,6 +35,8 @@ class CompletionResult(BaseModel):
     tokens_out: int
     cost: float
     latency_ms: float
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
 
 
 class StreamChunk(BaseModel):
@@ -108,6 +110,7 @@ class ProviderConfig(BaseModel):
     provider_map: dict[str, str] = Field(default_factory=dict)
     provider_circuit_breaker_threshold: int = 2
     provider_circuit_breaker_reset_ms: int = 120000
+    prompt_caching: bool = True
 
 
 class RoutingConfig(BaseModel):

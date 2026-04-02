@@ -46,6 +46,7 @@ _provider_schema = sy.Map({
     sy.Optional("provider_map"): sy.MapPattern(sy.Str(), sy.Str()),
     sy.Optional("provider_circuit_breaker_threshold"): sy.Int(),
     sy.Optional("provider_circuit_breaker_reset_ms"): sy.Int(),
+    sy.Optional("prompt_caching"): sy.Bool(),
 })
 
 _cascade_schema = sy.Map({

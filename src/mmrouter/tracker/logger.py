@@ -24,21 +24,25 @@ CREATE TABLE IF NOT EXISTS requests (
     latency_ms REAL NOT NULL,
     fallback_used INTEGER NOT NULL DEFAULT 0,
     cascade_used INTEGER NOT NULL DEFAULT 0,
-    cascade_attempts INTEGER NOT NULL DEFAULT 1
+    cascade_attempts INTEGER NOT NULL DEFAULT 1,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0
 )
 """
 
 _MIGRATIONS = [
     "ALTER TABLE requests ADD COLUMN cascade_used INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE requests ADD COLUMN cascade_attempts INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE requests ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE requests ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0",
 ]
 
 _INSERT = """
 INSERT INTO requests (
     timestamp, prompt_hash, complexity, category, confidence,
     model, tokens_in, tokens_out, cost, latency_ms, fallback_used,
-    cascade_used, cascade_attempts
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    cascade_used, cascade_attempts, cache_read_tokens, cache_creation_tokens
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -79,6 +83,8 @@ class Tracker:
             int(entry.fallback_used),
             int(entry.cascade_used),
             entry.cascade_attempts,
+            entry.completion.cache_read_tokens,
+            entry.completion.cache_creation_tokens,
         ))
         self._conn.commit()
 
