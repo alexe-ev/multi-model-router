@@ -12,9 +12,9 @@ def _seed_db(db_path):
     tracker = Tracker(db_path)
     conn = tracker.connection
     test_data = [
-        ("2026-04-01T10:00:00", "abc123", "simple", "factual", 0.9, "claude-haiku-4-5-20251001", 10, 20, 0.0001, 50.0, 0, 0, 1, 0, 0),
-        ("2026-04-01T11:00:00", "def456", "simple", "factual", 0.8, "claude-haiku-4-5-20251001", 50, 100, 0.001, 200.0, 0, 0, 1, 0, 0),
-        ("2026-04-01T12:00:00", "ghi789", "medium", "code", 0.7, "claude-sonnet-4-6", 100, 200, 0.01, 500.0, 1, 0, 1, 0, 0),
+        ("2026-04-01T10:00:00", "abc123", "simple", "factual", 0.9, "claude-haiku-4-5-20251001", 10, 20, 0.0001, 50.0, 0, 0, 1, 0, 0, None, None),
+        ("2026-04-01T11:00:00", "def456", "simple", "factual", 0.8, "claude-haiku-4-5-20251001", 50, 100, 0.001, 200.0, 0, 0, 1, 0, 0, None, None),
+        ("2026-04-01T12:00:00", "ghi789", "medium", "code", 0.7, "claude-sonnet-4-6", 100, 200, 0.01, 500.0, 1, 0, 1, 0, 0, None, None),
     ]
     for row in test_data:
         conn.execute(_INSERT, row)

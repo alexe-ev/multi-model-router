@@ -203,15 +203,15 @@ class TestCascadeSavings:
         from mmrouter.tracker.logger import _INSERT as tracker_insert
         conn.execute(tracker_insert, (
             "2026-04-01T10:00:00", "abc123", "simple", "factual", 0.9,
-            "claude-haiku-4-5-20251001", 100, 50, 0.001, 100.0, 0, 1, 2, 0, 0,
+            "claude-haiku-4-5-20251001", 100, 50, 0.001, 100.0, 0, 1, 2, 0, 0, None, None,
         ))
         conn.execute(tracker_insert, (
             "2026-04-01T11:00:00", "def456", "medium", "reasoning", 0.8,
-            "claude-sonnet-4-6", 200, 100, 0.01, 200.0, 0, 1, 3, 0, 0,
+            "claude-sonnet-4-6", 200, 100, 0.01, 200.0, 0, 1, 3, 0, 0, None, None,
         ))
         conn.execute(tracker_insert, (
             "2026-04-01T12:00:00", "ghi789", "simple", "factual", 0.9,
-            "claude-haiku-4-5-20251001", 50, 25, 0.0005, 50.0, 0, 0, 1, 0, 0,
+            "claude-haiku-4-5-20251001", 50, 25, 0.0005, 50.0, 0, 0, 1, 0, 0, None, None,
         ))
         conn.commit()
 

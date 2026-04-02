@@ -9,11 +9,14 @@ from pydantic import BaseModel
 
 from mmrouter.classifier import ClassifierBase
 from mmrouter.classifier.rules import RuleClassifier
+from mmrouter.experiments.splitter import assign_variant
+from mmrouter.experiments.store import ExperimentStore
 from mmrouter.models import (
     CascadeConfig,
     ClassificationResult,
     CompletionResult,
     Complexity,
+    Experiment,
     ModelRoute,
     RequestLog,
     RoutingConfig,
@@ -46,6 +49,8 @@ class RoutingResult(BaseModel):
     cascade_attempts: int = 1
     budget_downgraded: bool = False
     adaptive_reranked: bool = False
+    experiment_id: int | None = None
+    variant: str | None = None
 
 
 class Router:
@@ -60,6 +65,7 @@ class Router:
         tracker: Tracker | None = None,
         db_path: str | Path = "mmrouter.db",
     ):
+        self._config_path = str(config_path)
         self._config: RoutingConfig = load_config(config_path)
         self._classifier = classifier or RuleClassifier()
         self._provider = provider or LiteLLMProvider(self._config.provider)
@@ -71,6 +77,34 @@ class Router:
             self._scorer = FeedbackScorer(
                 self._tracker.connection, self._config.adaptive
             )
+        self._experiment_store = ExperimentStore(self._tracker.connection)
+        # Cache for loaded experiment configs (config_path -> RoutingConfig)
+        self._config_cache: dict[str, RoutingConfig] = {
+            self._config_path: self._config,
+        }
+
+    def _load_config(self, path: str) -> RoutingConfig:
+        """Load and cache a routing config."""
+        if path not in self._config_cache:
+            self._config_cache[path] = load_config(path)
+        return self._config_cache[path]
+
+    def _resolve_experiment(self, prompt_hash: str) -> tuple[RoutingConfig, int | None, str | None]:
+        """Check active experiment, assign variant, return (config, experiment_id, variant).
+
+        If no active experiment, returns (self._config, None, None).
+        """
+        experiment = self._experiment_store.get_active()
+        if experiment is None:
+            return self._config, None, None
+
+        variant = assign_variant(prompt_hash, experiment.traffic_split)
+        config_path = (
+            experiment.treatment_config if variant == "treatment"
+            else experiment.control_config
+        )
+        config = self._load_config(config_path)
+        return config, experiment.id, variant
 
     def _get_cascade_chain(self, route: ModelRoute) -> list[str]:
         """Get cascade chain for a route: per-route if defined, else all unique models cheap-first."""
@@ -108,8 +142,13 @@ class Router:
         classification: ClassificationResult,
         route: ModelRoute,
         escalated: bool,
+        *,
+        config: RoutingConfig | None = None,
+        experiment_id: int | None = None,
+        variant: str | None = None,
     ) -> RoutingResult:
         """Try models cheapest-first, escalate if quality gate fails."""
+        effective_config = config or self._config
         cascade_chain = self._get_cascade_chain(route)
 
         # Adaptive reranking for cascade chain
@@ -121,7 +160,8 @@ class Router:
                 classification.category.value,
             )
 
-        gate = create_quality_gate(self._config.cascade, self._provider)
+        gate = create_quality_gate(effective_config.cascade, self._provider)
+        prompt_hash = RequestLog.hash_prompt(prompt)
 
         last_completion: CompletionResult | None = None
         last_model: str | None = None
@@ -150,12 +190,14 @@ class Router:
                 gate_result = gate.check(prompt, completion)
                 if gate_result.passed:
                     request_id = self._tracker.log(RequestLog(
-                        prompt_hash=RequestLog.hash_prompt(prompt),
+                        prompt_hash=prompt_hash,
                         classification=classification,
                         model_used=model,
                         completion=completion,
                         cascade_used=True,
                         cascade_attempts=attempts,
+                        experiment_id=experiment_id,
+                        variant=variant,
                     ))
                     result = RoutingResult(
                         classification=classification,
@@ -166,6 +208,8 @@ class Router:
                         cascade_used=True,
                         cascade_attempts=attempts,
                         adaptive_reranked=adaptive_reranked,
+                        experiment_id=experiment_id,
+                        variant=variant,
                     )
                     return result
                 # Quality gate failed, try next model
@@ -176,12 +220,14 @@ class Router:
         # All models tried, none passed quality gate. Return last response (best effort).
         if last_completion and last_model:
             request_id = self._tracker.log(RequestLog(
-                prompt_hash=RequestLog.hash_prompt(prompt),
+                prompt_hash=prompt_hash,
                 classification=classification,
                 model_used=last_model,
                 completion=last_completion,
                 cascade_used=True,
                 cascade_attempts=attempts,
+                experiment_id=experiment_id,
+                variant=variant,
             ))
             result = RoutingResult(
                 classification=classification,
@@ -192,6 +238,8 @@ class Router:
                 cascade_used=True,
                 cascade_attempts=attempts,
                 adaptive_reranked=adaptive_reranked,
+                experiment_id=experiment_id,
+                variant=variant,
             )
             return result
 
@@ -203,10 +251,14 @@ class Router:
 
     def route(self, prompt: str) -> RoutingResult:
         classification = self._classifier.classify(prompt)
+        prompt_hash = RequestLog.hash_prompt(prompt)
+
+        # Experiment: resolve which config to use
+        config, experiment_id, variant = self._resolve_experiment(prompt_hash)
 
         complexity = classification.complexity
         escalated = False
-        if classification.confidence < self._config.classifier.threshold:
+        if classification.confidence < config.classifier.threshold:
             new_complexity = _ESCALATION_MAP[complexity]
             if new_complexity != complexity:
                 escalated = True
@@ -220,15 +272,18 @@ class Router:
                 budget_downgraded = True
                 complexity = new_complexity
 
-        route = self._config.get_route(complexity, classification.category)
+        route = config.get_route(complexity, classification.category)
         if not route:
             raise ValueError(
                 f"No route for {complexity}/{classification.category}"
             )
 
         # Cascade routing path
-        if self._config.cascade.enabled:
-            result = self._route_cascade(prompt, classification, route, escalated)
+        if config.cascade.enabled:
+            result = self._route_cascade(
+                prompt, classification, route, escalated,
+                config=config, experiment_id=experiment_id, variant=variant,
+            )
             result.budget_downgraded = budget_downgraded
             return result
 
@@ -267,11 +322,13 @@ class Router:
                     fallback_used = True
 
                 request_id = self._tracker.log(RequestLog(
-                    prompt_hash=RequestLog.hash_prompt(prompt),
+                    prompt_hash=prompt_hash,
                     classification=classification,
                     model_used=model,
                     completion=completion,
                     fallback_used=fallback_used,
+                    experiment_id=experiment_id,
+                    variant=variant,
                 ))
 
                 result = RoutingResult(
@@ -283,6 +340,8 @@ class Router:
                     escalated=escalated,
                     budget_downgraded=budget_downgraded,
                     adaptive_reranked=adaptive_reranked,
+                    experiment_id=experiment_id,
+                    variant=variant,
                 )
 
                 return result
@@ -468,6 +527,10 @@ class Router:
     def get_budget_status(self) -> dict:
         """Return current budget status."""
         return self._budget.get_status()
+
+    @property
+    def experiment_store(self) -> ExperimentStore:
+        return self._experiment_store
 
     def close(self) -> None:
         self._tracker.close()
