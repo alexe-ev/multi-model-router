@@ -60,7 +60,7 @@ def route(ctx, prompt, verbose, db):
     router.close()
 
 
-def _make_classifier(name: str):
+def _make_classifier(name: str, config_path: str = "configs/default.yaml"):
     """Factory: return the classifier instance for the given name."""
     if name == "rules":
         from mmrouter.classifier.rules import RuleClassifier
@@ -72,6 +72,21 @@ def _make_classifier(name: str):
             click.secho(f"Error: {e}", fg="red", err=True)
             sys.exit(1)
         return EmbeddingClassifier()
+    if name == "llm":
+        try:
+            from mmrouter.classifier.llm_classifier import LLMClassifier
+            from mmrouter.providers.litellm_provider import LiteLLMProvider
+            from mmrouter.router.config import load_config
+        except ImportError as e:
+            click.secho(f"Error: {e}", fg="red", err=True)
+            sys.exit(1)
+        try:
+            cfg = load_config(config_path)
+            model = cfg.classifier.model or "claude-haiku-4-5-20251001"
+        except Exception:
+            model = "claude-haiku-4-5-20251001"
+        provider = LiteLLMProvider()
+        return LLMClassifier(provider, model=model)
     click.secho(f"Error: unknown classifier '{name}'", fg="red", err=True)
     sys.exit(1)
 
@@ -81,7 +96,7 @@ def _make_classifier(name: str):
 @click.option(
     "--classifier",
     "classifier_name",
-    type=click.Choice(["rules", "embeddings"]),
+    type=click.Choice(["rules", "embeddings", "llm"]),
     default="rules",
     show_default=True,
     help="Classifier to use.",
@@ -89,7 +104,7 @@ def _make_classifier(name: str):
 @click.pass_context
 def classify(ctx, prompt, classifier_name):
     """Classify a prompt without routing (debug)."""
-    classifier = _make_classifier(classifier_name)
+    classifier = _make_classifier(classifier_name, ctx.obj["config"])
     result = classifier.classify(prompt)
 
     click.echo(json.dumps({
@@ -142,7 +157,7 @@ def stats(db, as_json):
 @click.option(
     "--classifier",
     "classifier_name",
-    type=click.Choice(["rules", "embeddings"]),
+    type=click.Choice(["rules", "embeddings", "llm"]),
     default="rules",
     show_default=True,
     help="Classifier to use.",
@@ -159,7 +174,7 @@ def eval_cmd(dataset, classifier_name):
 
     click.echo(f"Loaded {len(eval_set)} cases from {dataset}")
 
-    classifier = _make_classifier(classifier_name)
+    classifier = _make_classifier(classifier_name, "configs/default.yaml")
     report = run_eval(classifier, eval_set)
 
     click.echo()
