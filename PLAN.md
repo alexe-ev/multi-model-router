@@ -197,19 +197,19 @@ multi-model-router/
 
 **Scope:**
 
-- [ ] **Project scaffolding.** pyproject.toml, структура пакета, pytest setup, .gitignore.
-- [ ] **Rule-based classifier.** Keywords + length heuristics. Возвращает `{complexity, category, confidence}`.
-- [ ] **YAML config loader.** Парсит routing config, валидирует, возвращает model name по (complexity, category).
-- [ ] **Router engine.** `router.route(prompt)` : classify -> select model -> call LiteLLM -> return response + metadata.
-- [ ] **LiteLLM provider wrapper.** Изолирует LiteLLM за интерфейсом. Retry + basic error handling.
-- [ ] **Fallback chain.** При ошибке primary: пробуем fallback models из конфига.
-- [ ] **SQLite tracker.** Логирует каждый запрос: model, tokens, cost, latency, classification result.
-- [ ] **CLI.** `mmrouter route "What is the capital of France?"` -- выводит ответ + routing metadata.
-- [ ] **Programmatic API.** `from mmrouter import Router; r = Router(); result = r.route("...")`.
-- [ ] **Default config.** `configs/default.yaml` с маппингом на Claude models.
-- [ ] **Eval dataset.** 100+ queries с ground truth labels в `eval_data/test_set.yaml`.
-- [ ] **Basic eval script.** Измеряет accuracy rule-based classifier на eval set.
-- [ ] **Tests.** Unit-тесты для classifier, config loader, tracker.
+- [x] **Project scaffolding.** pyproject.toml, структура пакета, pytest setup, .gitignore.
+- [x] **Rule-based classifier.** Keywords + length heuristics. Возвращает `{complexity, category, confidence}`.
+- [x] **YAML config loader.** Парсит routing config, валидирует, возвращает model name по (complexity, category).
+- [x] **Router engine.** `router.route(prompt)` : classify -> select model -> call LiteLLM -> return response + metadata.
+- [x] **LiteLLM provider wrapper.** Изолирует LiteLLM за интерфейсом. Retry + basic error handling.
+- [x] **Fallback chain.** При ошибке primary: пробуем fallback models из конфига.
+- [x] **SQLite tracker.** Логирует каждый запрос: model, tokens, cost, latency, classification result.
+- [x] **CLI.** `mmrouter route "What is the capital of France?"` -- выводит ответ + routing metadata.
+- [x] **Programmatic API.** `from mmrouter import Router; r = Router(); result = r.route("...")`.
+- [x] **Default config.** `configs/default.yaml` с маппингом на Claude models.
+- [x] **Eval dataset.** 120 queries с ground truth labels в `eval_data/test_set.yaml`.
+- [x] **Basic eval script.** Измеряет accuracy rule-based classifier на eval set.
+- [x] **Tests.** 122 unit-теста для всех компонентов.
 
 **Deliverable:** Работающий CLI и Python API. `pip install -e .` и поехали.
 
@@ -223,9 +223,9 @@ multi-model-router/
 
 **Scope:**
 
-- [ ] **Embedding-based classifier.** sentence-transformers, kNN по labeled examples. Accuracy на eval set.
-- [ ] **LLM-as-classifier.** Zero-shot и few-shot через cheap model (Haiku). Accuracy на eval set.
-- [ ] **Classifier comparison.** Скрипт: запускает все три стратегии на eval set, выводит accuracy/latency/cost таблицу.
+- [x] **Embedding-based classifier.** sentence-transformers kNN, 78% accuracy (146 training examples).
+- [x] **LLM-as-classifier.** Zero/few-shot через Haiku via ProviderBase. XML-tag prompt isolation.
+- [x] **Classifier comparison.** `mmrouter compare` запускает все стратегии, выводит таблицу.
 - [ ] **Circuit breaker.** Per-provider. Transient vs permanent error distinction.
 - [ ] **Confidence-based routing.** Low confidence -> escalate model tier.
 - [ ] **Cost tracker analytics.** Aggregations: daily costs, savings vs baseline, model distribution.
@@ -276,14 +276,14 @@ multi-model-router/
 ## 6. Success Criteria
 
 ### MVP
-- [ ] `mmrouter route "prompt"` работает end-to-end
-- [ ] Rule-based classifier accuracy >= 65% на eval set
+- [x] `mmrouter route "prompt"` работает end-to-end
+- [x] Rule-based classifier accuracy >= 65% на eval set (67%)
 - [ ] Cost savings >= 30% vs single-model baseline (measured)
-- [ ] Fallback работает при недоступности primary model
+- [x] Fallback работает при недоступности primary model
 
 ### V1
-- [ ] Три стратегии классификации реализованы и сравнены
-- [ ] Best classifier accuracy >= 85%
+- [x] Три стратегии классификации реализованы и сравнены
+- [ ] Best classifier accuracy >= 85% (embedding 78%, need LLM eval with API key)
 - [ ] Cost savings >= 40%
 - [ ] Quality delta < 5% vs single-model
 - [ ] Dashboard показывает: distribution, costs, savings, quality, errors
