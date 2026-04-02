@@ -86,3 +86,10 @@ budget:
   warn_threshold: 0.75
   downgrade_threshold: 0.90
   hard_limit_action: cheapest
+
+adaptive:
+  enabled: false
+  min_feedback_count: 20
+  decay_days: 30
+  penalty_threshold: 0.4
+  boost_threshold: 0.8

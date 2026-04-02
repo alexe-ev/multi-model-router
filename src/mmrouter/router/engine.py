@@ -21,6 +21,7 @@ from mmrouter.models import (
 )
 from mmrouter.providers.base import ProviderBase, _extract_last_user_message
 from mmrouter.providers.litellm_provider import LiteLLMProvider, ProviderError
+from mmrouter.router.adaptive import FeedbackScorer
 from mmrouter.router.budget import BudgetExceededError, BudgetManager
 from mmrouter.router.cascade import QualityGateResult, create_quality_gate
 from mmrouter.router.config import load_config
@@ -38,11 +39,13 @@ class RoutingResult(BaseModel):
     classification: ClassificationResult
     completion: CompletionResult
     model_used: str
+    request_id: int | None = None
     fallback_used: bool = False
     escalated: bool = False
     cascade_used: bool = False
     cascade_attempts: int = 1
     budget_downgraded: bool = False
+    adaptive_reranked: bool = False
 
 
 class Router:
@@ -63,6 +66,11 @@ class Router:
         self._tracker = tracker or Tracker(db_path)
         self._breakers = CircuitBreakerRegistry(self._config.provider)
         self._budget = BudgetManager(self._config.budget, self._tracker.connection)
+        self._scorer: FeedbackScorer | None = None
+        if self._config.adaptive.enabled:
+            self._scorer = FeedbackScorer(
+                self._tracker.connection, self._config.adaptive
+            )
 
     def _get_cascade_chain(self, route: ModelRoute) -> list[str]:
         """Get cascade chain for a route: per-route if defined, else all unique models cheap-first."""
@@ -103,6 +111,16 @@ class Router:
     ) -> RoutingResult:
         """Try models cheapest-first, escalate if quality gate fails."""
         cascade_chain = self._get_cascade_chain(route)
+
+        # Adaptive reranking for cascade chain
+        adaptive_reranked = False
+        if self._scorer:
+            cascade_chain, adaptive_reranked = self._scorer.rerank_models(
+                cascade_chain,
+                classification.complexity.value,
+                classification.category.value,
+            )
+
         gate = create_quality_gate(self._config.cascade, self._provider)
 
         last_completion: CompletionResult | None = None
@@ -131,15 +149,7 @@ class Router:
 
                 gate_result = gate.check(prompt, completion)
                 if gate_result.passed:
-                    result = RoutingResult(
-                        classification=classification,
-                        completion=completion,
-                        model_used=model,
-                        escalated=escalated,
-                        cascade_used=True,
-                        cascade_attempts=attempts,
-                    )
-                    self._tracker.log(RequestLog(
+                    request_id = self._tracker.log(RequestLog(
                         prompt_hash=RequestLog.hash_prompt(prompt),
                         classification=classification,
                         model_used=model,
@@ -147,6 +157,16 @@ class Router:
                         cascade_used=True,
                         cascade_attempts=attempts,
                     ))
+                    result = RoutingResult(
+                        classification=classification,
+                        completion=completion,
+                        model_used=model,
+                        request_id=request_id,
+                        escalated=escalated,
+                        cascade_used=True,
+                        cascade_attempts=attempts,
+                        adaptive_reranked=adaptive_reranked,
+                    )
                     return result
                 # Quality gate failed, try next model
             except ProviderError as e:
@@ -155,15 +175,7 @@ class Router:
 
         # All models tried, none passed quality gate. Return last response (best effort).
         if last_completion and last_model:
-            result = RoutingResult(
-                classification=classification,
-                completion=last_completion,
-                model_used=last_model,
-                escalated=escalated,
-                cascade_used=True,
-                cascade_attempts=attempts,
-            )
-            self._tracker.log(RequestLog(
+            request_id = self._tracker.log(RequestLog(
                 prompt_hash=RequestLog.hash_prompt(prompt),
                 classification=classification,
                 model_used=last_model,
@@ -171,6 +183,16 @@ class Router:
                 cascade_used=True,
                 cascade_attempts=attempts,
             ))
+            result = RoutingResult(
+                classification=classification,
+                completion=last_completion,
+                model_used=last_model,
+                request_id=request_id,
+                escalated=escalated,
+                cascade_used=True,
+                cascade_attempts=attempts,
+                adaptive_reranked=adaptive_reranked,
+            )
             return result
 
         raise RuntimeError(
@@ -212,6 +234,14 @@ class Router:
 
         # Standard routing path
         models_to_try = [route.model] + route.fallbacks
+
+        # Adaptive reranking
+        adaptive_reranked = False
+        if self._scorer:
+            models_to_try, adaptive_reranked = self._scorer.rerank_models(
+                models_to_try, complexity.value, classification.category.value
+            )
+
         fallback_used = False
         last_error = None
 
@@ -236,22 +266,24 @@ class Router:
                 if i > 0:
                     fallback_used = True
 
-                result = RoutingResult(
-                    classification=classification,
-                    completion=completion,
-                    model_used=model,
-                    fallback_used=fallback_used,
-                    escalated=escalated,
-                    budget_downgraded=budget_downgraded,
-                )
-
-                self._tracker.log(RequestLog(
+                request_id = self._tracker.log(RequestLog(
                     prompt_hash=RequestLog.hash_prompt(prompt),
                     classification=classification,
                     model_used=model,
                     completion=completion,
                     fallback_used=fallback_used,
                 ))
+
+                result = RoutingResult(
+                    classification=classification,
+                    completion=completion,
+                    model_used=model,
+                    request_id=request_id,
+                    fallback_used=fallback_used,
+                    escalated=escalated,
+                    budget_downgraded=budget_downgraded,
+                    adaptive_reranked=adaptive_reranked,
+                )
 
                 return result
             except ProviderError as e:
@@ -293,6 +325,14 @@ class Router:
 
         # Standard routing path for messages (no cascade for messages yet)
         models_to_try = [route.model] + route.fallbacks
+
+        # Adaptive reranking
+        adaptive_reranked = False
+        if self._scorer:
+            models_to_try, adaptive_reranked = self._scorer.rerank_models(
+                models_to_try, complexity.value, classification.category.value
+            )
+
         fallback_used = False
         last_error = None
 
@@ -317,22 +357,24 @@ class Router:
                 if i > 0:
                     fallback_used = True
 
-                result = RoutingResult(
-                    classification=classification,
-                    completion=completion,
-                    model_used=model,
-                    fallback_used=fallback_used,
-                    escalated=escalated,
-                    budget_downgraded=budget_downgraded,
-                )
-
-                self._tracker.log(RequestLog(
+                request_id = self._tracker.log(RequestLog(
                     prompt_hash=RequestLog.hash_prompt(prompt),
                     classification=classification,
                     model_used=model,
                     completion=completion,
                     fallback_used=fallback_used,
                 ))
+
+                result = RoutingResult(
+                    classification=classification,
+                    completion=completion,
+                    model_used=model,
+                    request_id=request_id,
+                    fallback_used=fallback_used,
+                    escalated=escalated,
+                    budget_downgraded=budget_downgraded,
+                    adaptive_reranked=adaptive_reranked,
+                )
 
                 return result
             except ProviderError as e:
@@ -408,12 +450,20 @@ class Router:
     def classify(self, prompt: str) -> ClassificationResult:
         return self._classifier.classify(prompt)
 
+    def submit_feedback(self, request_id: int, rating: int) -> None:
+        """Submit feedback for a routed request."""
+        self._tracker.submit_feedback(request_id, rating)
+
     def get_config(self) -> RoutingConfig:
         """Return the current routing config."""
         return self._config
 
     def get_stats(self) -> dict:
         return self._tracker.get_stats()
+
+    def get_feedback_stats(self) -> dict:
+        """Return feedback analytics."""
+        return self._tracker.get_feedback_stats()
 
     def get_budget_status(self) -> dict:
         """Return current budget status."""
