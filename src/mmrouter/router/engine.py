@@ -9,14 +9,17 @@ from pydantic import BaseModel
 from mmrouter.classifier import ClassifierBase
 from mmrouter.classifier.rules import RuleClassifier
 from mmrouter.models import (
+    CascadeConfig,
     ClassificationResult,
     CompletionResult,
     Complexity,
+    ModelRoute,
     RequestLog,
     RoutingConfig,
 )
 from mmrouter.providers.base import ProviderBase
 from mmrouter.providers.litellm_provider import LiteLLMProvider, ProviderError
+from mmrouter.router.cascade import QualityGateResult, create_quality_gate
 from mmrouter.router.config import load_config
 from mmrouter.router.fallback import CircuitBreakerRegistry, CircuitOpenError
 from mmrouter.tracker.logger import Tracker
@@ -34,6 +37,8 @@ class RoutingResult(BaseModel):
     model_used: str
     fallback_used: bool = False
     escalated: bool = False
+    cascade_used: bool = False
+    cascade_attempts: int = 1
 
 
 class Router:
@@ -54,6 +59,98 @@ class Router:
         self._tracker = tracker or Tracker(db_path)
         self._breakers = CircuitBreakerRegistry(self._config.provider)
 
+    def _get_cascade_chain(self, route: ModelRoute) -> list[str]:
+        """Get cascade chain for a route: per-route if defined, else all unique models cheap-first."""
+        if route.cascade:
+            return list(route.cascade)
+        # Deduplicate: route.model + fallbacks, preserving order
+        seen = set()
+        chain = []
+        for m in [route.model] + route.fallbacks:
+            if m not in seen:
+                seen.add(m)
+                chain.append(m)
+        return chain
+
+    def _route_cascade(
+        self,
+        prompt: str,
+        classification: ClassificationResult,
+        route: ModelRoute,
+        escalated: bool,
+    ) -> RoutingResult:
+        """Try models cheapest-first, escalate if quality gate fails."""
+        cascade_chain = self._get_cascade_chain(route)
+        gate = create_quality_gate(self._config.cascade, self._provider)
+
+        last_completion: CompletionResult | None = None
+        last_model: str | None = None
+        attempts = 0
+
+        for model in cascade_chain:
+            breaker = self._breakers.get(model)
+            try:
+                breaker.check()
+            except CircuitOpenError:
+                continue
+
+            try:
+                completion = self._provider.complete(prompt, model)
+                breaker.record_success()
+                attempts += 1
+                last_completion = completion
+                last_model = model
+
+                gate_result = gate.check(prompt, completion)
+                if gate_result.passed:
+                    result = RoutingResult(
+                        classification=classification,
+                        completion=completion,
+                        model_used=model,
+                        escalated=escalated,
+                        cascade_used=True,
+                        cascade_attempts=attempts,
+                    )
+                    self._tracker.log(RequestLog(
+                        prompt_hash=RequestLog.hash_prompt(prompt),
+                        classification=classification,
+                        model_used=model,
+                        completion=completion,
+                        cascade_used=True,
+                        cascade_attempts=attempts,
+                    ))
+                    return result
+                # Quality gate failed, try next model
+            except ProviderError as e:
+                breaker.record_failure(e.retryable)
+                continue
+
+        # All models tried, none passed quality gate. Return last response (best effort).
+        if last_completion and last_model:
+            result = RoutingResult(
+                classification=classification,
+                completion=last_completion,
+                model_used=last_model,
+                escalated=escalated,
+                cascade_used=True,
+                cascade_attempts=attempts,
+            )
+            self._tracker.log(RequestLog(
+                prompt_hash=RequestLog.hash_prompt(prompt),
+                classification=classification,
+                model_used=last_model,
+                completion=last_completion,
+                cascade_used=True,
+                cascade_attempts=attempts,
+            ))
+            return result
+
+        raise RuntimeError(
+            f"Cascade failed: all models unavailable for "
+            f"{classification.complexity}/{classification.category}. "
+            f"Chain: {cascade_chain}"
+        )
+
     def route(self, prompt: str) -> RoutingResult:
         classification = self._classifier.classify(prompt)
 
@@ -71,6 +168,11 @@ class Router:
                 f"No route for {complexity}/{classification.category}"
             )
 
+        # Cascade routing path
+        if self._config.cascade.enabled:
+            return self._route_cascade(prompt, classification, route, escalated)
+
+        # Standard routing path (unchanged)
         models_to_try = [route.model] + route.fallbacks
         fallback_used = False
         last_error = None

@@ -196,6 +196,46 @@ class TestModelPricing:
             assert "output" in MODEL_PRICING[model]
 
 
+class TestCascadeSavings:
+    def test_cascade_savings_with_cascade_requests(self, tmp_path):
+        tracker = Tracker(tmp_path / "test.db")
+        conn = tracker.connection
+        from mmrouter.tracker.logger import _INSERT as tracker_insert
+        conn.execute(tracker_insert, (
+            "2026-04-01T10:00:00", "abc123", "simple", "factual", 0.9,
+            "claude-haiku-4-5-20251001", 100, 50, 0.001, 100.0, 0, 1, 2,
+        ))
+        conn.execute(tracker_insert, (
+            "2026-04-01T11:00:00", "def456", "medium", "reasoning", 0.8,
+            "claude-sonnet-4-6", 200, 100, 0.01, 200.0, 0, 1, 3,
+        ))
+        conn.execute(tracker_insert, (
+            "2026-04-01T12:00:00", "ghi789", "simple", "factual", 0.9,
+            "claude-haiku-4-5-20251001", 50, 25, 0.0005, 50.0, 0, 0, 1,
+        ))
+        conn.commit()
+
+        analytics = CostAnalytics(conn)
+        result = analytics.cascade_savings()
+
+        assert result["cascade_requests"] == 2
+        assert result["cascade_actual_cost"] == pytest.approx(0.011, abs=1e-6)
+        assert result["cascade_attempts_total"] == 5
+        assert result["avg_attempts"] == 2.5
+        tracker.close()
+
+    def test_cascade_savings_no_cascade_requests(self, tmp_path):
+        tracker = Tracker(tmp_path / "test.db")
+        analytics = CostAnalytics(tracker.connection)
+        result = analytics.cascade_savings()
+
+        assert result["cascade_requests"] == 0
+        assert result["cascade_actual_cost"] == 0.0
+        assert result["cascade_attempts_total"] == 0
+        assert result["avg_attempts"] == 0.0
+        tracker.close()
+
+
 class TestTrackerConnectionProperty:
     def test_tracker_exposes_connection(self, tmp_path):
         tracker = Tracker(tmp_path / "test.db")

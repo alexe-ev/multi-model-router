@@ -281,3 +281,358 @@ class TestConfidenceRouting:
         assert result.escalated is True
         assert "sonnet" in result.model_used.lower()
         router.close()
+
+
+class CascadeMockProvider(ProviderBase):
+    """Provider with per-model response content for cascade testing."""
+
+    def __init__(self, responses: dict[str, str] | None = None, fail_models: set | None = None):
+        self._responses = responses or {}
+        self._fail_models = fail_models or set()
+        self.calls: list[tuple[str, str]] = []
+
+    def complete(self, prompt, model, **kwargs):
+        self.calls.append((prompt, model))
+        if model in self._fail_models:
+            raise ProviderError(f"{model} is down", retryable=True)
+        content = self._responses.get(model, f"Response from {model}")
+        return CompletionResult(
+            content=content,
+            model=model,
+            tokens_in=10,
+            tokens_out=len(content),
+            cost=0.001,
+            latency_ms=100.0,
+        )
+
+
+def _write_cascade_config(tmp_path, *, enabled=True, strategy="heuristic",
+                          min_response_length=50, per_route_cascade=None):
+    """Write a cascade-enabled YAML config to tmp_path and return the path."""
+    cascade_section = ""
+    if per_route_cascade:
+        cascade_lines = "\n".join(f"        - {m}" for m in per_route_cascade)
+        cascade_section = f"\n      cascade:\n{cascade_lines}"
+
+    cfg = tmp_path / "cascade_test.yaml"
+    cfg.write_text(f"""
+version: "1"
+
+routes:
+  simple:
+    factual:
+      model: claude-haiku-4-5-20251001
+      fallbacks:
+        - claude-sonnet-4-6{cascade_section}
+    reasoning:
+      model: claude-haiku-4-5-20251001
+      fallbacks:
+        - claude-sonnet-4-6
+    creative:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+    code:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+
+  medium:
+    factual:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+    reasoning:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+    creative:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+    code:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+
+  complex:
+    factual:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+    reasoning:
+      model: claude-opus-4-6
+      fallbacks:
+        - claude-sonnet-4-6
+    creative:
+      model: claude-opus-4-6
+      fallbacks:
+        - claude-sonnet-4-6
+    code:
+      model: claude-opus-4-6
+      fallbacks:
+        - claude-sonnet-4-6
+
+classifier:
+  strategy: rules
+  threshold: "0.7"
+
+provider:
+  timeout_ms: 30000
+  max_retries: 2
+  circuit_breaker_threshold: 5
+  circuit_breaker_reset_ms: 60000
+
+cascade:
+  enabled: {str(enabled).lower()}
+  strategy: {strategy}
+  min_response_length: {min_response_length}
+""")
+    return cfg
+
+
+class TestCascadeRouting:
+    def test_cascade_disabled_zero_behavior_change(self, tmp_path):
+        """With cascade disabled, routing is identical to standard behavior."""
+        cfg = _write_cascade_config(tmp_path, enabled=False)
+        provider = MockProvider()
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+
+        assert not result.cascade_used
+        assert result.cascade_attempts == 1
+        assert "haiku" in result.model_used.lower()
+        router.close()
+
+    def test_cascade_short_response_escalates(self, tmp_path):
+        """Short response from cheap model triggers escalation."""
+        cfg = _write_cascade_config(tmp_path, min_response_length=50)
+        provider = CascadeMockProvider(responses={
+            "claude-haiku-4-5-20251001": "Short.",
+            "claude-sonnet-4-6": "A" * 100,
+        })
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+
+        assert result.cascade_used
+        assert result.cascade_attempts == 2
+        assert "sonnet" in result.model_used.lower()
+        assert len(provider.calls) == 2
+        router.close()
+
+    def test_cascade_good_cheap_response_stops_early(self, tmp_path):
+        """Good response from cheap model stops cascade after first model."""
+        cfg = _write_cascade_config(tmp_path, min_response_length=50)
+        provider = CascadeMockProvider(responses={
+            "claude-haiku-4-5-20251001": "A" * 200,
+            "claude-sonnet-4-6": "B" * 200,
+        })
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+
+        assert result.cascade_used
+        assert result.cascade_attempts == 1
+        assert "haiku" in result.model_used.lower()
+        assert len(provider.calls) == 1
+        router.close()
+
+    def test_cascade_hedging_detection(self, tmp_path):
+        """Response containing hedging phrase triggers escalation."""
+        cfg = _write_cascade_config(tmp_path, min_response_length=10)
+        provider = CascadeMockProvider(responses={
+            "claude-haiku-4-5-20251001": "I'm not sure about this, but I think the answer might be 42.",
+            "claude-sonnet-4-6": "The answer is 42, this is well established.",
+        })
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+
+        assert result.cascade_used
+        assert result.cascade_attempts == 2
+        assert "sonnet" in result.model_used.lower()
+        router.close()
+
+    def test_cascade_per_route_chain(self, tmp_path):
+        """Per-route cascade chain overrides default ordering."""
+        cfg = _write_cascade_config(
+            tmp_path,
+            min_response_length=50,
+            per_route_cascade=[
+                "claude-sonnet-4-6",
+                "claude-haiku-4-5-20251001",
+            ],
+        )
+        provider = CascadeMockProvider(responses={
+            "claude-sonnet-4-6": "Short.",
+            "claude-haiku-4-5-20251001": "A" * 200,
+        })
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+
+        # Should try sonnet first (per cascade chain), then haiku
+        assert result.cascade_used
+        assert result.cascade_attempts == 2
+        assert "haiku" in result.model_used.lower()
+        assert provider.calls[0][1] == "claude-sonnet-4-6"
+        assert provider.calls[1][1] == "claude-haiku-4-5-20251001"
+        router.close()
+
+    def test_cascade_default_chain_from_route(self, tmp_path):
+        """Without per-route cascade, chain is derived from primary + fallbacks."""
+        cfg = _write_cascade_config(tmp_path, min_response_length=50)
+        provider = CascadeMockProvider(responses={
+            "claude-haiku-4-5-20251001": "Short.",
+            "claude-sonnet-4-6": "A" * 200,
+        })
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+
+        # Default chain: haiku (primary), then sonnet (fallback)
+        assert provider.calls[0][1] == "claude-haiku-4-5-20251001"
+        assert provider.calls[1][1] == "claude-sonnet-4-6"
+        router.close()
+
+    def test_cascade_circuit_breaker_skips_open(self, tmp_path):
+        """Cascade skips models with open circuit breakers."""
+        cfg = _write_cascade_config(tmp_path, min_response_length=50)
+        fail_provider = CascadeMockProvider(
+            responses={"claude-sonnet-4-6": "A" * 200},
+            fail_models={"claude-haiku-4-5-20251001"},
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=fail_provider, tracker=tracker)
+
+        # Trip the circuit breaker by failing 5 times
+        for _ in range(5):
+            result = router.route("test")
+            assert "sonnet" in result.model_used.lower()
+
+        # Now haiku circuit is open. Next cascade should skip it.
+        fail_provider.calls.clear()
+        result = router.route("test")
+
+        assert result.cascade_used
+        assert "sonnet" in result.model_used.lower()
+        assert len(fail_provider.calls) == 1  # haiku skipped
+        router.close()
+
+    def test_cascade_provider_error_tries_next(self, tmp_path):
+        """ProviderError in cascade skips to next model (not fatal)."""
+        cfg = _write_cascade_config(tmp_path, min_response_length=10)
+        provider = CascadeMockProvider(
+            responses={"claude-sonnet-4-6": "A" * 200},
+            fail_models={"claude-haiku-4-5-20251001"},
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+
+        assert result.cascade_used
+        assert "sonnet" in result.model_used.lower()
+        router.close()
+
+    def test_cascade_logging(self, tmp_path):
+        """Tracker logs cascade_used and cascade_attempts correctly."""
+        cfg = _write_cascade_config(tmp_path, min_response_length=50)
+        provider = CascadeMockProvider(responses={
+            "claude-haiku-4-5-20251001": "Short.",
+            "claude-sonnet-4-6": "A" * 100,
+        })
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        router.route("test")
+
+        # Check the logged row
+        cur = tracker.connection.execute(
+            "SELECT cascade_used, cascade_attempts FROM requests ORDER BY id DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        assert row["cascade_used"] == 1
+        assert row["cascade_attempts"] == 2
+        router.close()
+
+    def test_cascade_all_fail_quality_returns_last(self, tmp_path):
+        """When all models fail quality gate, return last response (best effort)."""
+        cfg = _write_cascade_config(tmp_path, min_response_length=500)
+        provider = CascadeMockProvider(responses={
+            "claude-haiku-4-5-20251001": "Short response from haiku.",
+            "claude-sonnet-4-6": "Short response from sonnet.",
+        })
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+
+        # Should return last model's response as best effort
+        assert result.cascade_used
+        assert result.cascade_attempts == 2
+        assert "sonnet" in result.model_used.lower()
+        router.close()
+
+    def test_cascade_all_providers_unavailable(self, tmp_path):
+        """When all models in cascade are unavailable, raise RuntimeError."""
+        cfg = _write_cascade_config(tmp_path, min_response_length=10)
+        provider = CascadeMockProvider(
+            fail_models={"claude-haiku-4-5-20251001", "claude-sonnet-4-6"},
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        with pytest.raises(RuntimeError, match="Cascade failed"):
+            router.route("test")
+        router.close()
+
+    def test_cascade_result_fields(self, tmp_path):
+        """Verify RoutingResult has correct cascade metadata."""
+        cfg = _write_cascade_config(tmp_path, min_response_length=50)
+        provider = CascadeMockProvider(responses={
+            "claude-haiku-4-5-20251001": "A" * 100,
+        })
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+
+        assert result.cascade_used is True
+        assert result.cascade_attempts == 1
+        assert result.fallback_used is False
+        router.close()
+
+    def test_non_cascade_result_has_default_cascade_fields(self, tmp_path):
+        """Standard (non-cascade) routing result has cascade_used=False."""
+        cfg = _write_cascade_config(tmp_path, enabled=False)
+        provider = MockProvider()
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+
+        assert result.cascade_used is False
+        assert result.cascade_attempts == 1
+        router.close()
