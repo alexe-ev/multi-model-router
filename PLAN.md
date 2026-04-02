@@ -229,7 +229,7 @@ multi-model-router/
 - [x] **Circuit breaker.** Per-model CLOSED/OPEN/HALF_OPEN. Transient errors trip, permanent don't.
 - [x] **Confidence-based routing.** Low confidence -> escalate complexity one tier.
 - [x] **Cost tracker analytics.** Daily costs, savings vs Sonnet baseline, model pricing table, CLI --detailed.
-- [ ] **Quality eval.** LLM-as-judge на sample запросов. Compare routed vs single-model quality.
+- [x] **Quality eval.** LLM-as-judge scoring (1-5 rubric), compare routed vs baseline, CLI `mmrouter quality`.
 - [ ] **Dashboard backend (FastAPI).** Endpoints: `/api/stats`, `/api/requests`, `/api/models`.
 - [ ] **Dashboard frontend (React).** KPI cards, cost breakdown chart, model distribution pie, latency chart, request log table.
 - [ ] **README с business case.** "При N запросов/день routing экономит $X/мес" с реальными ценами.
