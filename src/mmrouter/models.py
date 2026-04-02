@@ -54,6 +54,8 @@ class RequestLog(BaseModel):
     fallback_used: bool = False
     cascade_used: bool = False
     cascade_attempts: int = 1
+    experiment_id: int | None = None
+    variant: str | None = None
 
     @staticmethod
     def hash_prompt(prompt: str) -> str:
@@ -121,6 +123,25 @@ class ProviderConfig(BaseModel):
     provider_circuit_breaker_threshold: int = 2
     provider_circuit_breaker_reset_ms: int = 120000
     prompt_caching: bool = True
+
+
+class ExperimentStatus(StrEnum):
+    ACTIVE = "active"
+    STOPPED = "stopped"
+    COMPLETED = "completed"
+
+
+class Experiment(BaseModel):
+    """A/B testing experiment: routes traffic between two configs."""
+
+    id: int | None = None
+    name: str
+    status: ExperimentStatus = ExperimentStatus.ACTIVE
+    control_config: str  # path to control YAML
+    treatment_config: str  # path to treatment YAML
+    traffic_split: float = Field(ge=0.0, le=1.0, default=0.5)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    stopped_at: datetime | None = None
 
 
 class RoutingConfig(BaseModel):

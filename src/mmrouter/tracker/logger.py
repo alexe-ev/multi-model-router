@@ -46,14 +46,17 @@ _MIGRATIONS = [
     "ALTER TABLE requests ADD COLUMN cascade_attempts INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE requests ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE requests ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE requests ADD COLUMN experiment_id INTEGER",
+    "ALTER TABLE requests ADD COLUMN variant TEXT",
 ]
 
 _INSERT = """
 INSERT INTO requests (
     timestamp, prompt_hash, complexity, category, confidence,
     model, tokens_in, tokens_out, cost, latency_ms, fallback_used,
-    cascade_used, cascade_attempts, cache_read_tokens, cache_creation_tokens
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    cascade_used, cascade_attempts, cache_read_tokens, cache_creation_tokens,
+    experiment_id, variant
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -98,6 +101,8 @@ class Tracker:
             entry.cascade_attempts,
             entry.completion.cache_read_tokens,
             entry.completion.cache_creation_tokens,
+            entry.experiment_id,
+            entry.variant,
         ))
         self._conn.commit()
         return cur.lastrowid
