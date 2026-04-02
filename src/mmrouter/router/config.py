@@ -42,6 +42,9 @@ _provider_schema = sy.Map({
     sy.Optional("max_retries"): sy.Int(),
     sy.Optional("circuit_breaker_threshold"): sy.Int(),
     sy.Optional("circuit_breaker_reset_ms"): sy.Int(),
+    sy.Optional("provider_map"): sy.MapPattern(sy.Str(), sy.Str()),
+    sy.Optional("provider_circuit_breaker_threshold"): sy.Int(),
+    sy.Optional("provider_circuit_breaker_reset_ms"): sy.Int(),
 })
 
 _cascade_schema = sy.Map({

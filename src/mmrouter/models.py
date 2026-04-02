@@ -104,6 +104,9 @@ class ProviderConfig(BaseModel):
     max_retries: int = 2
     circuit_breaker_threshold: int = 5
     circuit_breaker_reset_ms: int = 60000
+    provider_map: dict[str, str] = Field(default_factory=dict)
+    provider_circuit_breaker_threshold: int = 2
+    provider_circuit_breaker_reset_ms: int = 120000
 
 
 class RoutingConfig(BaseModel):
