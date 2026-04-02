@@ -139,6 +139,7 @@ def create_app(
                     "X-MMRouter-Model": result.model_used,
                     "X-MMRouter-Fallback": str(result.fallback_used).lower(),
                     "X-MMRouter-Escalated": str(result.escalated).lower(),
+                    "X-MMRouter-Budget-Downgraded": str(result.budget_downgraded).lower(),
                 }
 
                 from fastapi.responses import JSONResponse
@@ -187,7 +188,7 @@ def create_app(
     ):
         try:
             if body.model == "auto" or not body.model:
-                classification, model, fallback_used, escalated, chunks = (
+                classification, model, fallback_used, escalated, budget_downgraded, chunks = (
                     router.route_messages_stream(messages, **provider_kwargs)
                 )
                 extra_headers = {
@@ -197,6 +198,7 @@ def create_app(
                     "X-MMRouter-Model": model,
                     "X-MMRouter-Fallback": str(fallback_used).lower(),
                     "X-MMRouter-Escalated": str(escalated).lower(),
+                    "X-MMRouter-Budget-Downgraded": str(budget_downgraded).lower(),
                 }
             else:
                 chunks = router._provider.stream_messages(

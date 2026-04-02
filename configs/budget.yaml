@@ -71,8 +71,8 @@ cascade:
   min_response_length: 50
 
 budget:
-  enabled: false
-  daily_limit: 0.0
+  enabled: true
+  daily_limit: 5.00
   warn_threshold: 0.75
   downgrade_threshold: 0.90
   hard_limit_action: cheapest
