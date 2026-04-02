@@ -9,6 +9,7 @@ import litellm
 
 from mmrouter.models import CompletionResult, ProviderConfig, StreamChunk
 from mmrouter.providers.base import ProviderBase
+from mmrouter.providers.cache import annotate_cache_control
 
 # Suppress litellm's verbose logging
 litellm.suppress_debug_info = True
@@ -95,6 +96,12 @@ class LiteLLMProvider(ProviderBase):
 
     def stream_messages(self, messages: list[dict], model: str, **kwargs) -> Iterator[StreamChunk]:
         """Stream response chunks for a messages array."""
+        # Apply prompt caching annotation if enabled
+        if self._config.prompt_caching:
+            messages = annotate_cache_control(
+                messages, model, self._config.provider_map or None
+            )
+
         response = litellm.completion(
             model=model,
             messages=messages,
@@ -131,6 +138,13 @@ class LiteLLMProvider(ProviderBase):
         tokens_in = usage.prompt_tokens if usage else 0
         tokens_out = usage.completion_tokens if usage else 0
 
+        # Extract cache metrics from usage
+        cache_read_tokens = 0
+        cache_creation_tokens = 0
+        if usage:
+            cache_read_tokens = getattr(usage, "cache_read_input_tokens", 0) or 0
+            cache_creation_tokens = getattr(usage, "cache_creation_input_tokens", 0) or 0
+
         # Try litellm's cost calculation, fall back to 0
         try:
             cost = litellm.completion_cost(completion_response=response)
@@ -146,10 +160,18 @@ class LiteLLMProvider(ProviderBase):
             tokens_out=tokens_out,
             cost=cost,
             latency_ms=round(latency_ms, 1),
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
         )
 
     def _call_messages(self, messages: list[dict], model: str, **kwargs) -> CompletionResult:
         start = time.perf_counter()
+
+        # Apply prompt caching annotation if enabled
+        if self._config.prompt_caching:
+            messages = annotate_cache_control(
+                messages, model, self._config.provider_map or None
+            )
 
         response = litellm.completion(
             model=model,
@@ -163,6 +185,13 @@ class LiteLLMProvider(ProviderBase):
         usage = response.usage
         tokens_in = usage.prompt_tokens if usage else 0
         tokens_out = usage.completion_tokens if usage else 0
+
+        # Extract cache metrics from usage (Anthropic returns these via LiteLLM)
+        cache_read_tokens = 0
+        cache_creation_tokens = 0
+        if usage:
+            cache_read_tokens = getattr(usage, "cache_read_input_tokens", 0) or 0
+            cache_creation_tokens = getattr(usage, "cache_creation_input_tokens", 0) or 0
 
         try:
             cost = litellm.completion_cost(completion_response=response)
@@ -178,4 +207,6 @@ class LiteLLMProvider(ProviderBase):
             tokens_out=tokens_out,
             cost=cost,
             latency_ms=round(latency_ms, 1),
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
         )

@@ -81,7 +81,12 @@ def create_app(
     @app.post("/v1/chat/completions", dependencies=[Depends(verify_api_key)])
     async def chat_completions(body: ChatCompletionRequest, request: Request):
         router = _get_router(request)
-        messages = [{"role": m.role, "content": m.content or ""} for m in body.messages]
+        messages = []
+        for m in body.messages:
+            msg: dict = {"role": m.role, "content": m.content or ""}
+            if m.cache_control is not None:
+                msg["cache_control"] = m.cache_control
+            messages.append(msg)
 
         # Build kwargs for provider
         provider_kwargs: dict = {}
@@ -141,6 +146,11 @@ def create_app(
                     "X-MMRouter-Escalated": str(result.escalated).lower(),
                     "X-MMRouter-Budget-Downgraded": str(result.budget_downgraded).lower(),
                 }
+
+                if result.completion.cache_read_tokens > 0:
+                    headers["X-MMRouter-Cache-Read-Tokens"] = str(result.completion.cache_read_tokens)
+                if result.completion.cache_creation_tokens > 0:
+                    headers["X-MMRouter-Cache-Creation-Tokens"] = str(result.completion.cache_creation_tokens)
 
                 from fastapi.responses import JSONResponse
 

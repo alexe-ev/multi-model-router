@@ -88,6 +88,8 @@ def _mock_response(content="Hello", model="claude-haiku", prompt_tokens=10, comp
     response.usage = MagicMock()
     response.usage.prompt_tokens = prompt_tokens
     response.usage.completion_tokens = completion_tokens
+    response.usage.cache_read_input_tokens = 0
+    response.usage.cache_creation_input_tokens = 0
     return response
 
 
@@ -105,6 +107,28 @@ class TestLiteLLMProviderMessages:
         result = provider.complete_messages(messages, "claude-haiku")
 
         # Verify litellm.completion was called with the full messages array
+        # System message gets cache_control annotation for Anthropic models
+        call_kwargs = mock_litellm.completion.call_args
+        sent_messages = call_kwargs.kwargs["messages"]
+        assert len(sent_messages) == 2
+        assert sent_messages[0]["role"] == "system"
+        assert sent_messages[0]["content"] == "Be helpful"
+        assert sent_messages[0]["cache_control"] == {"type": "ephemeral"}
+        assert sent_messages[1] == {"role": "user", "content": "Hi"}
+        assert result.content == "Hello"
+
+    @patch("mmrouter.providers.litellm_provider.litellm")
+    def test_complete_messages_no_annotation_when_disabled(self, mock_litellm):
+        mock_litellm.completion.return_value = _mock_response()
+        mock_litellm.completion_cost.return_value = 0.001
+
+        provider = LiteLLMProvider(ProviderConfig(prompt_caching=False))
+        messages = [
+            {"role": "system", "content": "Be helpful"},
+            {"role": "user", "content": "Hi"},
+        ]
+        result = provider.complete_messages(messages, "claude-haiku")
+
         call_kwargs = mock_litellm.completion.call_args
         assert call_kwargs.kwargs["messages"] == messages
         assert result.content == "Hello"
