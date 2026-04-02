@@ -315,5 +315,97 @@ def compare_cmd(dataset):
         click.echo(row)
 
 
+@cli.command()
+@click.option("--dataset", default="eval_data/test_set.yaml", show_default=True)
+@click.option("--judge-model", default="claude-sonnet-4-6", show_default=True)
+@click.option("--baseline-model", default="claude-sonnet-4-6", show_default=True)
+@click.option("--sample", default=10, type=int, show_default=True, help="Number of prompts to evaluate.")
+@click.option("--db", default="mmrouter.db")
+@click.pass_context
+def quality(ctx, dataset, judge_model, baseline_model, sample, db):
+    """Evaluate response quality using LLM-as-judge."""
+    import random
+    from mmrouter.eval.evaluate import load_eval_set
+    from mmrouter.eval.quality import compare_quality
+    from mmrouter.providers.litellm_provider import LiteLLMProvider, ProviderError
+    from mmrouter.router.engine import Router
+
+    try:
+        eval_set = load_eval_set(dataset)
+    except (FileNotFoundError, ValueError) as e:
+        click.secho(f"Error loading dataset: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    if sample < len(eval_set):
+        eval_set = random.sample(eval_set, sample)
+
+    click.echo(f"Evaluating {len(eval_set)} prompts...")
+    click.echo(f"  Judge: {judge_model}")
+    click.echo(f"  Baseline: {baseline_model}")
+    click.echo()
+
+    try:
+        router = Router(ctx.obj["config"], db_path=db)
+        provider = LiteLLMProvider()
+    except Exception as e:
+        click.secho(f"Error initializing: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    router_responses = []
+    baseline_responses = []
+
+    for case in eval_set:
+        try:
+            routed = router.route(case.prompt)
+            router_responses.append((case.prompt, routed.completion.content))
+        except (ProviderError, RuntimeError) as e:
+            click.secho(f"  Router error: {e}", fg="yellow", err=True)
+            continue
+
+        try:
+            baseline = provider.complete(case.prompt, baseline_model)
+            baseline_responses.append((case.prompt, baseline.content))
+        except ProviderError as e:
+            click.secho(f"  Baseline error: {e}", fg="yellow", err=True)
+            router_responses.pop()  # keep lists aligned
+            continue
+
+    if not router_responses:
+        click.secho("No successful responses to evaluate.", fg="red", err=True)
+        sys.exit(1)
+
+    click.echo(f"Got {len(router_responses)} response pairs. Judging...")
+
+    try:
+        result = compare_quality(provider, judge_model, router_responses, baseline_responses)
+    except ProviderError as e:
+        click.secho(f"Judge error: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    rr = result["router"]
+    br = result["baseline"]
+
+    click.echo()
+    click.secho("Quality comparison", bold=True)
+    click.echo(f"  {'Dimension':<15} {'Routed':>8} {'Baseline':>8} {'Delta':>8}")
+    click.echo(f"  {'-'*15} {'-'*8} {'-'*8} {'-'*8}")
+
+    for dim in ("score", "relevance", "accuracy", "completeness"):
+        rv = getattr(rr, f"avg_{dim}")
+        bv = getattr(br, f"avg_{dim}")
+        d = round(rv - bv, 2)
+        color = "green" if d >= 0 else "red"
+        click.echo(f"  {dim:<15} {rv:>8.2f} {bv:>8.2f} ", nl=False)
+        click.secho(f"{d:>+8.2f}", fg=color)
+
+    click.echo()
+    delta_pct = result["delta_pct"]
+    color = "green" if delta_pct >= 0 else "red"
+    click.echo("  Overall delta: ", nl=False)
+    click.secho(f"{delta_pct:+.1f}%", fg=color)
+
+    router.close()
+
+
 if __name__ == "__main__":
     cli()
