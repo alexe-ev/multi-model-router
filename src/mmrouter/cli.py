@@ -53,6 +53,9 @@ def route(ctx, prompt, verbose, db):
     if result.cascade_used:
         click.secho(f"  (cascade: tried {result.cascade_attempts} models)", fg="cyan")
 
+    if result.budget_downgraded:
+        click.secho("  (budget: model downgraded due to spend limit)", fg="yellow")
+
     if verbose:
         click.echo()
         click.secho("Classification:", fg="bright_black")
@@ -134,12 +137,24 @@ def stats(db, as_json, detailed):
 
     if detailed:
         from mmrouter.tracker.analytics import CostAnalytics
+        from mmrouter.models import BudgetConfig
+        from mmrouter.router.budget import BudgetManager
 
         analytics = CostAnalytics(tracker.connection)
         data["daily_costs"] = analytics.daily_costs()
         data["savings"] = analytics.savings_vs_baseline()
         data["distribution"] = analytics.distribution()
         data["cascade"] = analytics.cascade_savings()
+
+        # Budget status (uses default config if available)
+        budget_mgr = BudgetManager(BudgetConfig(), tracker.connection)
+        try:
+            from mmrouter.router.config import load_config
+            cfg = load_config("configs/default.yaml")
+            budget_mgr = BudgetManager(cfg.budget, tracker.connection)
+        except Exception:
+            pass
+        data["budget"] = budget_mgr.get_status()
 
     tracker.close()
 
@@ -198,6 +213,23 @@ def stats(db, as_json, detailed):
             click.echo(f"  Total cost:       ${cascade['cascade_actual_cost']:.6f}")
             click.echo(f"  Total attempts:   {cascade['cascade_attempts_total']}")
             click.echo(f"  Avg attempts:     {cascade['avg_attempts']:.1f}")
+
+        budget = data.get("budget", {})
+        if budget.get("enabled"):
+            click.echo()
+            click.secho("Budget:", bold=True)
+            click.echo(f"  Daily limit:  ${budget['daily_limit']:.2f}")
+            click.echo(f"  Spent today:  ${budget['spent_today']:.6f}")
+            click.echo(f"  Remaining:    ${budget['remaining']:.6f}")
+            click.echo(f"  Usage:        {budget['usage_pct']:.1f}%")
+            tier_color = {
+                "normal": "green",
+                "warn": "yellow",
+                "downgrade": "red",
+                "hard_limit": "red",
+            }.get(budget["tier"], "white")
+            click.echo("  Tier:         ", nl=False)
+            click.secho(budget["tier"], fg=tier_color)
 
 
 @cli.command(name="eval")
