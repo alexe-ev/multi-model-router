@@ -407,5 +407,26 @@ def quality(ctx, dataset, judge_model, baseline_model, sample, db):
     router.close()
 
 
+@cli.command()
+@click.option("--db", default="mmrouter.db", help="Path to tracker database.")
+@click.option("--port", default=8000, type=int, help="Port to serve on.")
+@click.option("--host", default="0.0.0.0", help="Host to bind to.")
+def dashboard(db, port, host):
+    """Start the dashboard web server."""
+    try:
+        import uvicorn
+        from mmrouter.dashboard.app import create_app
+    except ImportError:
+        click.secho(
+            "Dashboard dependencies not installed. Run: pip install mmrouter[dashboard]",
+            fg="red", err=True,
+        )
+        sys.exit(1)
+
+    app = create_app(db)
+    click.echo(f"Starting dashboard at http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port)
+
+
 if __name__ == "__main__":
     cli()
