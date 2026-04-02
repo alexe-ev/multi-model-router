@@ -7,6 +7,7 @@ from pathlib import Path
 import strictyaml as sy
 
 from mmrouter.models import (
+    BudgetConfig,
     CascadeConfig,
     Category,
     ClassifierConfig,
@@ -52,12 +53,21 @@ _cascade_schema = sy.Map({
     sy.Optional("judge_threshold"): sy.Int(),
 })
 
+_budget_schema = sy.Map({
+    sy.Optional("enabled"): sy.Bool(),
+    sy.Optional("daily_limit"): sy.Float(),
+    sy.Optional("warn_threshold"): sy.Float(),
+    sy.Optional("downgrade_threshold"): sy.Float(),
+    sy.Optional("hard_limit_action"): sy.Str(),
+})
+
 _config_schema = sy.Map({
     sy.Optional("version"): sy.Str(),
     "routes": _routes_schema,
     sy.Optional("classifier"): _classifier_schema,
     sy.Optional("provider"): _provider_schema,
     sy.Optional("cascade"): _cascade_schema,
+    sy.Optional("budget"): _budget_schema,
 })
 
 
@@ -132,10 +142,32 @@ def load_config(path: str | Path) -> RoutingConfig:
             cascade_kwargs["judge_threshold"] = cas_data["judge_threshold"]
         cascade = CascadeConfig(**cascade_kwargs)
 
+    budget = BudgetConfig()
+    if "budget" in data and data["budget"]:
+        bud_data = data["budget"]
+        budget_kwargs = {}
+        if "enabled" in bud_data:
+            budget_kwargs["enabled"] = bud_data["enabled"]
+        if "daily_limit" in bud_data:
+            budget_kwargs["daily_limit"] = float(bud_data["daily_limit"])
+        if "warn_threshold" in bud_data:
+            budget_kwargs["warn_threshold"] = float(bud_data["warn_threshold"])
+        if "downgrade_threshold" in bud_data:
+            budget_kwargs["downgrade_threshold"] = float(bud_data["downgrade_threshold"])
+        if "hard_limit_action" in bud_data:
+            action = bud_data["hard_limit_action"]
+            if action not in ("cheapest", "reject"):
+                raise ConfigError(
+                    f"Invalid hard_limit_action '{action}'. Must be 'cheapest' or 'reject'."
+                )
+            budget_kwargs["hard_limit_action"] = action
+        budget = BudgetConfig(**budget_kwargs)
+
     return RoutingConfig(
         version=data.get("version", "1"),
         routes=routes,
         classifier=classifier,
         provider=provider,
         cascade=cascade,
+        budget=budget,
     )

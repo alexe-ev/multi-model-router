@@ -58,6 +58,16 @@ class RequestLog(BaseModel):
         return hashlib.sha256(prompt.encode()).hexdigest()[:16]
 
 
+class BudgetConfig(BaseModel):
+    """Configuration for daily budget limits with automatic model downgrade."""
+
+    enabled: bool = False
+    daily_limit: float = 0.0
+    warn_threshold: float = 0.75
+    downgrade_threshold: float = 0.90
+    hard_limit_action: str = "cheapest"  # "cheapest" or "reject"
+
+
 class CascadeConfig(BaseModel):
     """Configuration for cascade routing (try cheap models first, escalate on low quality)."""
 
@@ -104,6 +114,7 @@ class RoutingConfig(BaseModel):
     classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
     cascade: CascadeConfig = Field(default_factory=CascadeConfig)
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
 
     def get_route(self, complexity: Complexity, category: Category) -> ModelRoute | None:
         complexity_routes = self.routes.get(complexity.value)
