@@ -1,0 +1,508 @@
+# Eval dataset: 120+ labeled prompts across 12 complexity x category buckets
+# Format: prompt, complexity (simple/medium/complex), category (factual/reasoning/creative/code)
+
+# --- simple / factual (10 entries) ---
+- prompt: "What is the capital of France?"
+  complexity: simple
+  category: factual
+
+- prompt: "Who wrote Hamlet?"
+  complexity: simple
+  category: factual
+
+- prompt: "When did World War II end?"
+  complexity: simple
+  category: factual
+
+- prompt: "What is the boiling point of water in Celsius?"
+  complexity: simple
+  category: factual
+
+- prompt: "How many continents are there?"
+  complexity: simple
+  category: factual
+
+- prompt: "What does HTTP stand for?"
+  complexity: simple
+  category: factual
+
+- prompt: "Where is the Eiffel Tower located?"
+  complexity: simple
+  category: factual
+
+- prompt: "How old is the Earth?"
+  complexity: simple
+  category: factual
+
+- prompt: "What is the chemical symbol for gold?"
+  complexity: simple
+  category: factual
+
+- prompt: "Is the sun a star?"
+  complexity: simple
+  category: factual
+
+# --- simple / reasoning (8 entries) ---
+- prompt: "Why is the sky blue?"
+  complexity: simple
+  category: reasoning
+
+- prompt: "Why do we need sleep?"
+  complexity: simple
+  category: reasoning
+
+- prompt: "What is the difference between a virus and a bacterium?"
+  complexity: simple
+  category: reasoning
+
+- prompt: "Why do leaves change color in autumn?"
+  complexity: simple
+  category: reasoning
+
+- prompt: "Compare cats and dogs as pets."
+  complexity: simple
+  category: reasoning
+
+- prompt: "Why is exercise good for you?"
+  complexity: simple
+  category: reasoning
+
+- prompt: "What is the difference between weather and climate?"
+  complexity: simple
+  category: reasoning
+
+- prompt: "Why does ice float on water?"
+  complexity: simple
+  category: reasoning
+
+# --- simple / creative (8 entries) ---
+- prompt: "Write a haiku about the ocean."
+  complexity: simple
+  category: creative
+
+- prompt: "Give me a one-sentence story about a lost robot."
+  complexity: simple
+  category: creative
+
+- prompt: "Create a slogan for a coffee shop."
+  complexity: simple
+  category: creative
+
+- prompt: "Write a short poem about rain."
+  complexity: simple
+  category: creative
+
+- prompt: "Describe a sunset in two sentences."
+  complexity: simple
+  category: creative
+
+- prompt: "Invent a name for a new color."
+  complexity: simple
+  category: creative
+
+- prompt: "Write a funny birthday message."
+  complexity: simple
+  category: creative
+
+- prompt: "Create a short riddle."
+  complexity: simple
+  category: creative
+
+# --- simple / code (8 entries) ---
+- prompt: "What does the len() function do in Python?"
+  complexity: simple
+  category: code
+
+- prompt: "What is a variable in programming?"
+  complexity: simple
+  category: code
+
+- prompt: "What is an API?"
+  complexity: simple
+  category: code
+
+- prompt: "What does HTML stand for?"
+  complexity: simple
+  category: code
+
+- prompt: "What is a SQL database?"
+  complexity: simple
+  category: code
+
+- prompt: "What is a for loop?"
+  complexity: simple
+  category: code
+
+- prompt: "What is JSON?"
+  complexity: simple
+  category: code
+
+- prompt: "What does git commit do?"
+  complexity: simple
+  category: code
+
+# --- medium / factual (9 entries) ---
+- prompt: "Explain how vaccines work in 3-4 sentences."
+  complexity: medium
+  category: factual
+
+- prompt: "What were the main causes of the French Revolution?"
+  complexity: medium
+  category: factual
+
+- prompt: "How does GPS work?"
+  complexity: medium
+  category: factual
+
+- prompt: "What is the difference between RAM and storage?"
+  complexity: medium
+  category: factual
+
+- prompt: "Summarize the key events of the Cold War."
+  complexity: medium
+  category: factual
+
+- prompt: "How does the human immune system fight infection?"
+  complexity: medium
+  category: factual
+
+- prompt: "What are the main layers of the Earth's atmosphere?"
+  complexity: medium
+  category: factual
+
+- prompt: "How does photosynthesis work?"
+  complexity: medium
+  category: factual
+
+- prompt: "What are the main branches of the US government and their roles?"
+  complexity: medium
+  category: factual
+
+# --- medium / reasoning (9 entries) ---
+- prompt: "What are the pros and cons of remote work for software teams?"
+  complexity: medium
+  category: reasoning
+
+- prompt: "Why do some startups succeed while most fail?"
+  complexity: medium
+  category: reasoning
+
+- prompt: "Analyze the trade-offs between SQL and NoSQL databases for a web app."
+  complexity: medium
+  category: reasoning
+
+- prompt: "Compare microservices and monolithic architectures for a small startup."
+  complexity: medium
+  category: reasoning
+
+- prompt: "What are the advantages and disadvantages of electric vehicles?"
+  complexity: medium
+  category: reasoning
+
+- prompt: "Why has remote work increased after COVID-19 and what are its implications?"
+  complexity: medium
+  category: reasoning
+
+- prompt: "Evaluate the pros and cons of using open source vs proprietary software for a business."
+  complexity: medium
+  category: reasoning
+
+- prompt: "Compare the effectiveness of different study techniques for long-term retention."
+  complexity: medium
+  category: reasoning
+
+- prompt: "What are the trade-offs between speed and code readability?"
+  complexity: medium
+  category: reasoning
+
+# --- medium / creative (9 entries) ---
+- prompt: "Write a short story (3-5 sentences) about an astronaut who discovers something unexpected on Mars."
+  complexity: medium
+  category: creative
+
+- prompt: "Draft a product description for a smartwatch targeting busy professionals."
+  complexity: medium
+  category: creative
+
+- prompt: "Write a dialogue between two characters arguing about whether AI is dangerous."
+  complexity: medium
+  category: creative
+
+- prompt: "Compose a cover letter opening paragraph for a junior software engineer applying at a startup."
+  complexity: medium
+  category: creative
+
+- prompt: "Write a scene where a detective interviews a suspect about a missing painting."
+  complexity: medium
+  category: creative
+
+- prompt: "Create a pitch for a mobile app that helps people reduce screen time."
+  complexity: medium
+  category: creative
+
+- prompt: "Rewrite this sentence to sound more professional: 'We messed up the deadline, sorry.'"
+  complexity: medium
+  category: creative
+
+- prompt: "Write a tweet thread (3 tweets) about why reading fiction makes you smarter."
+  complexity: medium
+  category: creative
+
+- prompt: "Draft an email subject line and first paragraph for a product launch announcement."
+  complexity: medium
+  category: creative
+
+# --- medium / code (9 entries) ---
+- prompt: "Write a Python function that checks if a string is a palindrome."
+  complexity: medium
+  category: code
+
+- prompt: "How do I reverse a list in Python?"
+  complexity: medium
+  category: code
+
+- prompt: "Write a SQL query to find the top 5 customers by total purchase amount."
+  complexity: medium
+  category: code
+
+- prompt: "Implement a simple stack in Python using a list."
+  complexity: medium
+  category: code
+
+- prompt: "Write a JavaScript function that debounces user input."
+  complexity: medium
+  category: code
+
+- prompt: "How do I handle errors in async/await JavaScript?"
+  complexity: medium
+  category: code
+
+- prompt: "Write a bash script that backs up a directory to a timestamped folder."
+  complexity: medium
+  category: code
+
+- prompt: "How do I make an HTTP GET request in Python using the requests library?"
+  complexity: medium
+  category: code
+
+- prompt: "Write a React component that shows a loading spinner while fetching data."
+  complexity: medium
+  category: code
+
+# --- complex / factual (8 entries) ---
+- prompt: "Provide a comprehensive overview of how mRNA vaccines are developed, tested, and approved, covering the biology, clinical trial phases, and regulatory process."
+  complexity: complex
+  category: factual
+
+- prompt: "Explain in detail the history and evolution of the internet from ARPANET to the modern web, including key technical and social milestones."
+  complexity: complex
+  category: factual
+
+- prompt: "Describe the full lifecycle of a star from nebula formation to its end state, covering all intermediate stages including main sequence, red giant, and stellar remnants."
+  complexity: complex
+  category: factual
+
+- prompt: "Give a detailed explanation of how quantum computers work, including qubits, superposition, entanglement, and how they differ from classical computers in solving specific problem classes."
+  complexity: complex
+  category: factual
+
+- prompt: "Comprehensively explain the causes, progression, and consequences of the 2008 global financial crisis, including the roles of mortgage-backed securities, leverage, and regulatory failures."
+  complexity: complex
+  category: factual
+
+- prompt: "Provide an in-depth explanation of how CRISPR-Cas9 gene editing works at the molecular level, including guide RNA design, DNA cleavage, and repair mechanisms."
+  complexity: complex
+  category: factual
+
+- prompt: "Explain in detail how the TCP/IP protocol stack works, from physical layer through application layer, describing each layer's role and how data is encapsulated and transmitted."
+  complexity: complex
+  category: factual
+
+- prompt: "Describe the Byzantine Empire's political, cultural, and economic contributions in detail, covering its peak, decline, and lasting influence on Eastern Europe and the Islamic world."
+  complexity: complex
+  category: factual
+
+# --- complex / reasoning (9 entries) ---
+- prompt: "Analyze the long-term economic and social consequences of automation and AI on labor markets, considering historical technological transitions and current trends. What policies might mitigate harm?"
+  complexity: complex
+  category: reasoning
+
+- prompt: "Compare and contrast distributed monolith vs true microservices architectures. Analyze when each is appropriate, what trade-offs exist in operational complexity, team autonomy, and failure modes."
+  complexity: complex
+  category: reasoning
+
+- prompt: "Critically evaluate the argument that strong AI regulation will stifle innovation. Consider evidence from analogous industries (pharma, aviation), current regulatory proposals, and differing stakeholder perspectives."
+  complexity: complex
+  category: reasoning
+
+- prompt: "Design a framework for evaluating whether a B2C marketplace should expand into a new country. What dimensions matter most? How do you weigh market size against regulatory risk and competitive intensity?"
+  complexity: complex
+  category: reasoning
+
+- prompt: "Analyze the trade-offs between vertical integration and relying on third-party platforms for a SaaS business. Consider control, margins, distribution reach, and strategic risk over a 5-year horizon."
+  complexity: complex
+  category: reasoning
+
+- prompt: "Evaluate the pros, cons, and ethical implications of using LLMs for medical diagnosis assistance. Cover accuracy, liability, bias in training data, doctor-patient relationship, and regulatory considerations."
+  complexity: complex
+  category: reasoning
+
+- prompt: "Compare different consensus mechanisms (PoW, PoS, PBFT) for distributed systems. Analyze their security assumptions, energy consumption, decentralization trade-offs, and real-world failure cases."
+  complexity: complex
+  category: reasoning
+
+- prompt: "A product has strong NPS but declining D30 retention. Walk through a structured investigation: what hypotheses would you form, what data would you pull, and how would you prioritize fixes?"
+  complexity: complex
+  category: reasoning
+
+- prompt: "Argue for and against introducing a freemium tier into an existing paid-only SaaS product. Consider cannibalization risk, support cost, viral coefficient, and competitive positioning."
+  complexity: complex
+  category: reasoning
+
+# --- complex / creative (8 entries) ---
+- prompt: "Write a 500-word opening chapter for a science fiction novel where humanity discovers that time flows backwards at the edge of the universe. Establish tone, voice, and at least two characters."
+  complexity: complex
+  category: creative
+
+- prompt: "Create a detailed world-building document for a fantasy setting where magic is powered by collective memory. Include the social structure, conflict sources, and at least three distinct factions."
+  complexity: complex
+  category: creative
+
+- prompt: "Write a persuasive essay (600+ words) arguing that the 40-hour work week is obsolete in the knowledge economy. Use historical context, economic data references, and anticipate counterarguments."
+  complexity: complex
+  category: creative
+
+- prompt: "Draft a complete product narrative for a new B2B SaaS tool that helps product teams automate sprint retrospectives using AI. Include problem framing, solution, differentiation, and a call to action."
+  complexity: complex
+  category: creative
+
+- prompt: "Write a multi-character short story (700+ words) set in a future where memories can be bought and sold. Explore themes of identity, inequality, and consent."
+  complexity: complex
+  category: creative
+
+- prompt: "Compose a detailed marketing strategy memo for launching a new productivity app in Southeast Asia. Cover positioning, channels, messaging, competitive landscape, and a 90-day rollout plan."
+  complexity: complex
+  category: creative
+
+- prompt: "Write a long-form narrative profile (600+ words) of an imaginary entrepreneur who built a company from a refugee camp. Focus on voice, specific detail, and emotional arc."
+  complexity: complex
+  category: creative
+
+- prompt: "Draft a comprehensive brand identity guide for a fintech startup targeting Gen Z. Include tone of voice, visual principles, sample copy, and guidelines for social media."
+  complexity: complex
+  category: creative
+
+# --- complex / code (9 entries) ---
+- prompt: "Design and implement a thread-safe LRU cache in Python with O(1) get and put operations. Include full implementation with type hints and explain the data structures used."
+  complexity: complex
+  category: code
+
+- prompt: "Implement a distributed rate limiter using Redis and Python. It should support per-user limits, sliding window algorithm, and be safe for use across multiple service instances."
+  complexity: complex
+  category: code
+
+- prompt: "Design a scalable event-driven architecture for a marketplace notification system. Describe the components, message queue choice, consumer groups, dead letter queues, and failure handling."
+  complexity: complex
+  category: code
+
+- prompt: "Implement a full-text search system from scratch in Python without using Elasticsearch. Cover tokenization, inverted index, BM25 scoring, and query execution."
+  complexity: complex
+  category: code
+
+- prompt: "Build a Python async task queue system using asyncio that supports priorities, retries with exponential backoff, and a worker pool. Provide full working code."
+  complexity: complex
+  category: code
+
+- prompt: "Design the database schema for a multi-tenant SaaS application. Include tables, indexes, row-level security approach, and explain trade-offs between shared schema and separate schemas per tenant."
+  complexity: complex
+  category: code
+
+- prompt: "Implement a reactive state management system in TypeScript (similar to MobX) from scratch. Support observables, computed values, and reactions. Include working code and explain the design."
+  complexity: complex
+  category: code
+
+- prompt: "Refactor a monolithic Django application to use a service layer with dependency injection. Show the before/after code structure, explain the pattern, and discuss testability improvements."
+  complexity: complex
+  category: code
+
+- prompt: "Implement a Merkle tree in Python for verifying data integrity, including construction, proof generation, and proof verification. Explain the cryptographic assumptions and use cases."
+  complexity: complex
+  category: code
+
+# --- additional entries to reach 120+ total ---
+
+# simple / factual (edge cases: very short, single word context)
+- prompt: "What year was the Mona Lisa painted?"
+  complexity: simple
+  category: factual
+
+- prompt: "How many bones are in the human body?"
+  complexity: simple
+  category: factual
+
+# simple / reasoning (edge: borderline short)
+- prompt: "Why do people yawn when they see someone else yawn?"
+  complexity: simple
+  category: reasoning
+
+# simple / creative (edge: very short request)
+- prompt: "Write a one-line joke about programmers."
+  complexity: simple
+  category: creative
+
+# simple / code (edge: definition-style)
+- prompt: "What is a null pointer?"
+  complexity: simple
+  category: code
+
+- prompt: "What does CSS stand for?"
+  complexity: simple
+  category: code
+
+# medium / factual (multi-signal: some length + some explanation)
+- prompt: "Explain the difference between a democracy and a republic."
+  complexity: medium
+  category: factual
+
+- prompt: "What is inflation and how is it measured?"
+  complexity: medium
+  category: factual
+
+# medium / reasoning (ambiguous: could be factual but asks for analysis)
+- prompt: "Is it better to use tabs or spaces for code indentation? Explain the trade-offs."
+  complexity: medium
+  category: reasoning
+
+# medium / creative (multi-signal: creative + some length)
+- prompt: "Write a product tagline and 3 bullet points for a meditation app."
+  complexity: medium
+  category: creative
+
+# medium / code (multi-signal: code + medium length)
+- prompt: "Write a Python decorator that measures and logs function execution time."
+  complexity: medium
+  category: code
+
+- prompt: "How do I implement pagination in a REST API?"
+  complexity: medium
+  category: code
+
+# complex / factual (very long, comprehensive)
+- prompt: "Provide a comprehensive multi-part explanation of how the human brain stores and retrieves long-term memories, covering synaptic plasticity, LTP, hippocampal consolidation, and the role of sleep in memory formation."
+  complexity: complex
+  category: factual
+
+# complex / reasoning (multi-step, multi-signal)
+- prompt: "A SaaS company has hit a revenue plateau despite growing signups. Walk through a full diagnosis: what retention, monetization, and activation problems could cause this, and how do you prioritize investigation?"
+  complexity: complex
+  category: reasoning
+
+# complex / creative (very long brief)
+- prompt: "Write the first 600 words of a psychological thriller where the protagonist gradually realizes she is the person being investigated by the detective she is helping. Establish unreliable narrator voice."
+  complexity: complex
+  category: creative
+
+# complex / code (architecture + implementation)
+- prompt: "Design and partially implement a CQRS + Event Sourcing system in Python for a simple bank account. Include command handlers, event store, read model projections, and explain consistency trade-offs."
+  complexity: complex
+  category: code

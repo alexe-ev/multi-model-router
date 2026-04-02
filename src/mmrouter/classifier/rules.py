@@ -32,12 +32,26 @@ _CREATIVE_KEYWORDS = {
 }
 
 _COMPLEX_KEYWORDS = {
+    # Tech/code
     "architecture", "distributed", "concurrent", "optimize", "scalable",
     "microservice", "kubernetes", "machine learning", "neural", "transformer",
-    "cryptography", "protocol", "consensus", "theorem", "proof", "derive",
-    "multi-step", "comprehensive", "in-depth", "detailed analysis",
-    "system design", "trade-off analysis",
+    "cryptography", "protocol", "consensus", "system design",
+    # Domain-general depth signals
+    "comprehensive", "in-depth", "in detail", "detailed", "thorough",
+    "step by step", "full lifecycle", "from scratch",
+    "causes and consequences", "history and evolution",
+    "theorem", "proof", "derive", "multi-step",
+    "trade-off analysis", "detailed analysis", "comprehensive overview",
 }
+
+_MEDIUM_PATTERNS = [
+    r"\bexplain (how|why|what)\b",
+    r"\bhow does .+ work\b",
+    r"\bdescribe (the|how|what)\b",
+    r"\bsummarize\b",
+    r"\bwhat are the .+ (of|between|for)\b",
+    r"\bcompare .+ (and|vs|versus|with)\b",
+]
 
 _SIMPLE_PATTERNS = [
     r"^what is\b",
@@ -129,7 +143,7 @@ class RuleClassifier(ClassifierBase):
         complex_score = _keyword_score(prompt, _COMPLEX_KEYWORDS)
         if complex_score >= 2:
             return Complexity.COMPLEX, 0.9
-        if complex_score == 1 and words > 30:
+        if complex_score == 1 and words > 15:
             return Complexity.COMPLEX, 0.8
 
         # Code tasks with action keywords are at least medium
@@ -143,11 +157,20 @@ class RuleClassifier(ClassifierBase):
                     return Complexity.COMPLEX, 0.8
                 return Complexity.MEDIUM, 0.8
 
+        # Medium patterns: explanation/description requests
+        has_medium_signal = any(
+            re.search(p, prompt_lower) for p in _MEDIUM_PATTERNS
+        )
+        if has_medium_signal and words > 8:
+            if words > 30:
+                return Complexity.COMPLEX, 0.7
+            return Complexity.MEDIUM, 0.8
+
         # Length heuristics
         if words <= 8:
             return Complexity.SIMPLE, 0.85
-        if words <= 20:
-            return Complexity.MEDIUM, 0.7 if category != Category.CODE else 0.75
-        if words <= 50:
+        if words <= 15:
+            return Complexity.MEDIUM, 0.7
+        if words <= 30:
             return Complexity.MEDIUM, 0.75
         return Complexity.COMPLEX, 0.7
