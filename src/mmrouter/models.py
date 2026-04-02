@@ -44,10 +44,29 @@ class RequestLog(BaseModel):
     model_used: str
     completion: CompletionResult
     fallback_used: bool = False
+    cascade_used: bool = False
+    cascade_attempts: int = 1
 
     @staticmethod
     def hash_prompt(prompt: str) -> str:
         return hashlib.sha256(prompt.encode()).hexdigest()[:16]
+
+
+class CascadeConfig(BaseModel):
+    """Configuration for cascade routing (try cheap models first, escalate on low quality)."""
+
+    enabled: bool = False
+    strategy: str = "heuristic"
+    min_response_length: int = 50
+    hedging_phrases: list[str] = Field(default_factory=lambda: [
+        "I'm not sure",
+        "I don't know",
+        "I cannot",
+        "I'm unable",
+        "I don't have enough information",
+    ])
+    judge_model: str | None = None
+    judge_threshold: int = 3
 
 
 class ModelRoute(BaseModel):
@@ -55,6 +74,7 @@ class ModelRoute(BaseModel):
 
     model: str
     fallbacks: list[str] = Field(default_factory=list)
+    cascade: list[str] = Field(default_factory=list)
 
 
 class ClassifierConfig(BaseModel):
@@ -77,6 +97,7 @@ class RoutingConfig(BaseModel):
     routes: dict[str, dict[str, ModelRoute]] = Field(default_factory=dict)
     classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
+    cascade: CascadeConfig = Field(default_factory=CascadeConfig)
 
     def get_route(self, complexity: Complexity, category: Category) -> ModelRoute | None:
         complexity_routes = self.routes.get(complexity.value)
