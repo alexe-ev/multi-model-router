@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterator
 
 from pydantic import BaseModel
 
@@ -16,8 +17,9 @@ from mmrouter.models import (
     ModelRoute,
     RequestLog,
     RoutingConfig,
+    StreamChunk,
 )
-from mmrouter.providers.base import ProviderBase
+from mmrouter.providers.base import ProviderBase, _extract_last_user_message
 from mmrouter.providers.litellm_provider import LiteLLMProvider, ProviderError
 from mmrouter.router.cascade import QualityGateResult, create_quality_gate
 from mmrouter.router.config import load_config
@@ -218,8 +220,122 @@ class Router:
             f"Tried: {models_to_try}. Last error: {last_error}"
         )
 
+    def route_messages(self, messages: list[dict], **kwargs) -> RoutingResult:
+        """Route a messages array. Classify based on last user message."""
+        prompt = _extract_last_user_message(messages)
+        classification = self._classifier.classify(prompt)
+
+        complexity = classification.complexity
+        escalated = False
+        if classification.confidence < self._config.classifier.threshold:
+            new_complexity = _ESCALATION_MAP[complexity]
+            if new_complexity != complexity:
+                escalated = True
+                complexity = new_complexity
+
+        route = self._config.get_route(complexity, classification.category)
+        if not route:
+            raise ValueError(
+                f"No route for {complexity}/{classification.category}"
+            )
+
+        # Standard routing path for messages (no cascade for messages yet)
+        models_to_try = [route.model] + route.fallbacks
+        fallback_used = False
+        last_error = None
+
+        for i, model in enumerate(models_to_try):
+            breaker = self._breakers.get(model)
+            try:
+                breaker.check()
+            except CircuitOpenError as e:
+                last_error = e
+                continue
+
+            try:
+                completion = self._provider.complete_messages(messages, model, **kwargs)
+                breaker.record_success()
+                if i > 0:
+                    fallback_used = True
+
+                result = RoutingResult(
+                    classification=classification,
+                    completion=completion,
+                    model_used=model,
+                    fallback_used=fallback_used,
+                    escalated=escalated,
+                )
+
+                self._tracker.log(RequestLog(
+                    prompt_hash=RequestLog.hash_prompt(prompt),
+                    classification=classification,
+                    model_used=model,
+                    completion=completion,
+                    fallback_used=fallback_used,
+                ))
+
+                return result
+            except ProviderError as e:
+                breaker.record_failure(e.retryable)
+                last_error = e
+                continue
+
+        raise RuntimeError(
+            f"All models failed for {classification.complexity}/{classification.category}. "
+            f"Tried: {models_to_try}. Last error: {last_error}"
+        )
+
+    def route_messages_stream(
+        self, messages: list[dict], **kwargs
+    ) -> tuple[ClassificationResult, str, bool, bool, Iterator[StreamChunk]]:
+        """Stream version: returns (classification, model_name, fallback_used, escalated, chunk_iterator).
+
+        Classification and model selection happen immediately.
+        The actual LLM call is lazy via the iterator.
+        """
+        prompt = _extract_last_user_message(messages)
+        classification = self._classifier.classify(prompt)
+
+        complexity = classification.complexity
+        escalated = False
+        if classification.confidence < self._config.classifier.threshold:
+            new_complexity = _ESCALATION_MAP[complexity]
+            if new_complexity != complexity:
+                escalated = True
+                complexity = new_complexity
+
+        route = self._config.get_route(complexity, classification.category)
+        if not route:
+            raise ValueError(
+                f"No route for {complexity}/{classification.category}"
+            )
+
+        models_to_try = [route.model] + route.fallbacks
+        last_error = None
+
+        for i, model in enumerate(models_to_try):
+            breaker = self._breakers.get(model)
+            try:
+                breaker.check()
+            except CircuitOpenError as e:
+                last_error = e
+                continue
+
+            fallback_used = i > 0
+            chunks = self._provider.stream_messages(messages, model, **kwargs)
+            return classification, model, fallback_used, escalated, chunks
+
+        raise RuntimeError(
+            f"All models failed for {classification.complexity}/{classification.category}. "
+            f"Tried: {models_to_try}. Last error: {last_error}"
+        )
+
     def classify(self, prompt: str) -> ClassificationResult:
         return self._classifier.classify(prompt)
+
+    def get_config(self) -> RoutingConfig:
+        """Return the current routing config."""
+        return self._config
 
     def get_stats(self) -> dict:
         return self._tracker.get_stats()

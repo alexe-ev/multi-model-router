@@ -421,6 +421,29 @@ def quality(ctx, dataset, judge_model, baseline_model, sample, db):
 
 
 @cli.command()
+@click.option("--port", default=8080, type=int, help="Port to serve on.")
+@click.option("--host", default="0.0.0.0", help="Host to bind to.")
+@click.option("--db", default="mmrouter.db", help="Path to tracker database.")
+@click.option("--workers", default=1, type=int, help="Number of uvicorn workers.")
+@click.pass_context
+def serve(ctx, port, host, db, workers):
+    """Start the OpenAI-compatible API server."""
+    try:
+        import uvicorn
+        from mmrouter.server.app import create_app
+    except ImportError:
+        click.secho(
+            "Server dependencies not installed. Run: pip install mmrouter[server]",
+            fg="red", err=True,
+        )
+        sys.exit(1)
+
+    app = create_app(config_path=ctx.obj["config"], db_path=db)
+    click.echo(f"Starting mmrouter API at http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, workers=workers)
+
+
+@cli.command()
 @click.option("--db", default="mmrouter.db", help="Path to tracker database.")
 @click.option("--port", default=8000, type=int, help="Port to serve on.")
 @click.option("--host", default="0.0.0.0", help="Host to bind to.")
