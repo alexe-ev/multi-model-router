@@ -230,8 +230,8 @@ multi-model-router/
 - [x] **Confidence-based routing.** Low confidence -> escalate complexity one tier.
 - [x] **Cost tracker analytics.** Daily costs, savings vs Sonnet baseline, model pricing table, CLI --detailed.
 - [x] **Quality eval.** LLM-as-judge scoring (1-5 rubric), compare routed vs baseline, CLI `mmrouter quality`.
-- [ ] **Dashboard backend (FastAPI).** Endpoints: `/api/stats`, `/api/requests`, `/api/models`.
-- [ ] **Dashboard frontend (React).** KPI cards, cost breakdown chart, model distribution pie, latency chart, request log table.
+- [x] **Dashboard backend (FastAPI).** Endpoints: `/api/stats`, `/api/stats/daily`, `/api/stats/distribution`, `/api/requests`, `/api/models`.
+- [x] **Dashboard frontend (React).** KPI cards, cost breakdown chart, model distribution pie, request log table with pagination + filters.
 - [ ] **README с business case.** "При N запросов/день routing экономит $X/мес" с реальными ценами.
 - [ ] **Сравнение стратегий.** Таблица: три classifier'а по accuracy, latency, cost. Какой лучше для какого домена.
 
