@@ -77,6 +77,23 @@ class Router:
                 chain.append(m)
         return chain
 
+    def _record_failure_and_propagate(self, model: str, retryable: bool) -> None:
+        """Record failure on model breaker and propagate to provider level if it opens."""
+        breaker = self._breakers.get(model)
+        was_open = breaker.state.value == "open"
+        breaker.record_failure(retryable)
+        is_open_now = breaker.state.value == "open"
+        if not was_open and is_open_now:
+            self._breakers.record_model_open(model)
+        if retryable:
+            self._breakers.record_provider_failure(model)
+
+    def _record_success(self, model: str) -> None:
+        """Record success on model breaker and propagate to provider level."""
+        breaker = self._breakers.get(model)
+        breaker.record_success()
+        self._breakers.record_provider_success(model)
+
     def _route_cascade(
         self,
         prompt: str,
@@ -93,6 +110,12 @@ class Router:
         attempts = 0
 
         for model in cascade_chain:
+            # Provider-level check first (fast skip entire provider)
+            try:
+                self._breakers.check_provider(model)
+            except CircuitOpenError:
+                continue
+
             breaker = self._breakers.get(model)
             try:
                 breaker.check()
@@ -101,7 +124,7 @@ class Router:
 
             try:
                 completion = self._provider.complete(prompt, model)
-                breaker.record_success()
+                self._record_success(model)
                 attempts += 1
                 last_completion = completion
                 last_model = model
@@ -127,7 +150,7 @@ class Router:
                     return result
                 # Quality gate failed, try next model
             except ProviderError as e:
-                breaker.record_failure(e.retryable)
+                self._record_failure_and_propagate(model, e.retryable)
                 continue
 
         # All models tried, none passed quality gate. Return last response (best effort).
@@ -187,12 +210,19 @@ class Router:
             result.budget_downgraded = budget_downgraded
             return result
 
-        # Standard routing path (unchanged)
+        # Standard routing path
         models_to_try = [route.model] + route.fallbacks
         fallback_used = False
         last_error = None
 
         for i, model in enumerate(models_to_try):
+            # Provider-level check first (fast skip entire provider)
+            try:
+                self._breakers.check_provider(model)
+            except CircuitOpenError as e:
+                last_error = e
+                continue
+
             breaker = self._breakers.get(model)
             try:
                 breaker.check()
@@ -202,7 +232,7 @@ class Router:
 
             try:
                 completion = self._provider.complete(prompt, model)
-                breaker.record_success()
+                self._record_success(model)
                 if i > 0:
                     fallback_used = True
 
@@ -225,7 +255,7 @@ class Router:
 
                 return result
             except ProviderError as e:
-                breaker.record_failure(e.retryable)
+                self._record_failure_and_propagate(model, e.retryable)
                 last_error = e
                 continue
 
@@ -267,6 +297,13 @@ class Router:
         last_error = None
 
         for i, model in enumerate(models_to_try):
+            # Provider-level check first (fast skip entire provider)
+            try:
+                self._breakers.check_provider(model)
+            except CircuitOpenError as e:
+                last_error = e
+                continue
+
             breaker = self._breakers.get(model)
             try:
                 breaker.check()
@@ -276,7 +313,7 @@ class Router:
 
             try:
                 completion = self._provider.complete_messages(messages, model, **kwargs)
-                breaker.record_success()
+                self._record_success(model)
                 if i > 0:
                     fallback_used = True
 
@@ -299,7 +336,7 @@ class Router:
 
                 return result
             except ProviderError as e:
-                breaker.record_failure(e.retryable)
+                self._record_failure_and_propagate(model, e.retryable)
                 last_error = e
                 continue
 
@@ -345,6 +382,13 @@ class Router:
         last_error = None
 
         for i, model in enumerate(models_to_try):
+            # Provider-level check first (fast skip entire provider)
+            try:
+                self._breakers.check_provider(model)
+            except CircuitOpenError as e:
+                last_error = e
+                continue
+
             breaker = self._breakers.get(model)
             try:
                 breaker.check()

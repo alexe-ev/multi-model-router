@@ -636,3 +636,338 @@ class TestCascadeRouting:
         assert result.cascade_used is False
         assert result.cascade_attempts == 1
         router.close()
+
+
+def _write_multi_provider_config(tmp_path, *, provider_threshold=2, model_threshold=1,
+                                  cascade_enabled=False):
+    """Write a multi-provider YAML config for testing."""
+    cfg = tmp_path / "multi_provider_test.yaml"
+    cfg.write_text(f"""
+version: "1"
+
+routes:
+  simple:
+    factual:
+      model: claude-haiku-4-5-20251001
+      fallbacks:
+        - claude-sonnet-4-6
+        - gpt-4o-mini
+        - gemini-2.0-flash
+    reasoning:
+      model: claude-haiku-4-5-20251001
+      fallbacks:
+        - claude-sonnet-4-6
+    creative:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+    code:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+
+  medium:
+    factual:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - gpt-4o
+    reasoning:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - gpt-4o
+    creative:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - gpt-4o
+    code:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - gpt-4o
+
+  complex:
+    factual:
+      model: claude-opus-4-6
+      fallbacks:
+        - gpt-4o
+    reasoning:
+      model: claude-opus-4-6
+      fallbacks:
+        - gpt-4o
+    creative:
+      model: claude-opus-4-6
+      fallbacks:
+        - gpt-4o
+    code:
+      model: claude-opus-4-6
+      fallbacks:
+        - gpt-4o
+
+classifier:
+  strategy: rules
+  threshold: "0.7"
+
+provider:
+  timeout_ms: 30000
+  max_retries: 2
+  circuit_breaker_threshold: {model_threshold}
+  circuit_breaker_reset_ms: 60000
+  provider_circuit_breaker_threshold: {provider_threshold}
+  provider_circuit_breaker_reset_ms: 120000
+
+cascade:
+  enabled: {str(cascade_enabled).lower()}
+  strategy: heuristic
+  min_response_length: 50
+""")
+    return cfg
+
+
+class TestProviderCircuitBreakerIntegration:
+    def test_provider_breaker_skips_all_same_provider_models(self, tmp_path):
+        """When provider breaker trips, all models from that provider are skipped."""
+        cfg = _write_multi_provider_config(tmp_path, provider_threshold=2, model_threshold=1)
+        provider = FailingMockProvider(
+            fail_models={
+                "claude-haiku-4-5-20251001": True,
+                "claude-sonnet-4-6": True,
+            }
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        # First call: haiku fails (trips model breaker), sonnet fails (trips model breaker)
+        # Both anthropic models now open -> provider breaker trips
+        # Falls back to gpt-4o-mini (openai)
+        result = router.route("test")
+        assert result.model_used == "gpt-4o-mini"
+        assert result.fallback_used
+
+        # Second call: provider breaker should skip haiku AND sonnet instantly
+        provider.calls.clear()
+        result = router.route("test")
+        assert result.model_used == "gpt-4o-mini"
+        # Only gpt-4o-mini should be called (haiku + sonnet skipped by provider breaker)
+        assert len(provider.calls) == 1
+        assert provider.calls[0][1] == "gpt-4o-mini"
+        router.close()
+
+    def test_provider_breaker_does_not_affect_other_providers(self, tmp_path):
+        """Tripping anthropic provider breaker doesn't affect openai models."""
+        cfg = _write_multi_provider_config(tmp_path, provider_threshold=2, model_threshold=1)
+        provider = FailingMockProvider(
+            fail_models={
+                "claude-haiku-4-5-20251001": True,
+                "claude-sonnet-4-6": True,
+            }
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        # Trip anthropic provider breaker
+        result = router.route("test")
+        assert result.model_used == "gpt-4o-mini"
+
+        # OpenAI model should work fine
+        provider.calls.clear()
+        result = router.route("test")
+        assert result.model_used == "gpt-4o-mini"
+        router.close()
+
+    def test_cross_provider_fallback_works(self, tmp_path):
+        """When primary model fails, cross-provider fallback succeeds."""
+        cfg = _write_multi_provider_config(tmp_path, provider_threshold=2, model_threshold=5)
+        provider = FailingMockProvider(
+            fail_models={
+                "claude-haiku-4-5-20251001": True,
+                "claude-sonnet-4-6": True,
+            }
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        result = router.route("test")
+        assert result.model_used == "gpt-4o-mini"
+        assert result.fallback_used
+        router.close()
+
+    def test_provider_breaker_not_tripped_below_threshold(self, tmp_path):
+        """Provider breaker doesn't trip with only 1 model open when threshold is 2."""
+        cfg = _write_multi_provider_config(tmp_path, provider_threshold=2, model_threshold=1)
+        provider = FailingMockProvider(
+            fail_models={
+                "claude-haiku-4-5-20251001": True,
+                # sonnet works fine
+            }
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        # Trip haiku model breaker only
+        result = router.route("test")
+        assert result.model_used == "claude-sonnet-4-6"
+
+        # Second call: haiku skipped by model breaker, but sonnet should still be tried
+        # (provider breaker not tripped since only 1 anthropic model open)
+        provider.calls.clear()
+        result = router.route("test")
+        assert result.model_used == "claude-sonnet-4-6"
+        # Should try sonnet directly (haiku skipped by model breaker, not provider breaker)
+        assert len(provider.calls) == 1
+        assert provider.calls[0][1] == "claude-sonnet-4-6"
+        router.close()
+
+    def test_multi_provider_config_loads(self):
+        """multi-provider.yaml loads and validates without errors."""
+        from mmrouter.router.config import load_config
+        config = load_config("configs/multi-provider.yaml")
+        assert config.version == "1"
+        route = config.get_route(Complexity.SIMPLE, Category.FACTUAL)
+        assert route is not None
+        assert route.model == "claude-haiku-4-5-20251001"
+        assert "gpt-4o-mini" in route.fallbacks
+
+    def test_cascade_respects_provider_breaker(self, tmp_path):
+        """Cascade routing also skips models from tripped provider."""
+        cfg = _write_multi_provider_config(
+            tmp_path, provider_threshold=2, model_threshold=1, cascade_enabled=True
+        )
+        provider = CascadeMockProvider(
+            responses={
+                "gpt-4o-mini": "A" * 200,
+                "gemini-2.0-flash": "B" * 200,
+            },
+            fail_models={"claude-haiku-4-5-20251001", "claude-sonnet-4-6"},
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        # First call trips both anthropic model breakers -> provider breaker
+        result = router.route("test")
+        assert result.model_used in ("gpt-4o-mini", "gemini-2.0-flash")
+        assert result.cascade_used
+
+        # Second call should skip anthropic models entirely via provider breaker
+        provider.calls.clear()
+        result = router.route("test")
+        # Only non-anthropic models should be called
+        called_models = [c[1] for c in provider.calls]
+        for m in called_models:
+            assert not m.startswith("claude-")
+        router.close()
+
+    def test_all_providers_fail_raises(self, tmp_path):
+        """When all providers are down, RuntimeError is raised."""
+        cfg = _write_multi_provider_config(tmp_path, provider_threshold=1, model_threshold=1)
+        provider = FailingMockProvider(
+            fail_models={
+                "claude-haiku-4-5-20251001": True,
+                "claude-sonnet-4-6": True,
+                "gpt-4o-mini": True,
+                "gemini-2.0-flash": True,
+            }
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        with pytest.raises(RuntimeError, match="All models failed"):
+            router.route("test")
+        router.close()
+
+    def test_provider_map_override_in_config(self, tmp_path):
+        """provider_map config override correctly maps custom model names."""
+        cfg = tmp_path / "provider_map_test.yaml"
+        cfg.write_text("""
+version: "1"
+
+routes:
+  simple:
+    factual:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+    reasoning:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+    creative:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+    code:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+
+  medium:
+    factual:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+    reasoning:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+    creative:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+    code:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+
+  complex:
+    factual:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+    reasoning:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+    creative:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+    code:
+      model: my-custom-claude
+      fallbacks:
+        - gpt-4o-mini
+
+classifier:
+  strategy: rules
+  threshold: "0.7"
+
+provider:
+  timeout_ms: 30000
+  max_retries: 2
+  circuit_breaker_threshold: 1
+  circuit_breaker_reset_ms: 60000
+  provider_circuit_breaker_threshold: 1
+  provider_circuit_breaker_reset_ms: 120000
+  provider_map:
+    my-custom-claude: anthropic
+""")
+        provider = FailingMockProvider(
+            fail_models={"my-custom-claude": True}
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(str(cfg), classifier=classifier, provider=provider, tracker=tracker)
+
+        # Trip the custom model breaker -> should trip anthropic provider
+        result = router.route("test")
+        assert result.model_used == "gpt-4o-mini"
+
+        # Second call: provider breaker should skip custom model
+        provider.calls.clear()
+        result = router.route("test")
+        assert result.model_used == "gpt-4o-mini"
+        assert len(provider.calls) == 1
+        router.close()
