@@ -50,6 +50,9 @@ def route(ctx, prompt, verbose, db):
     if result.fallback_used:
         click.secho("  (fallback model used)", fg="yellow")
 
+    if result.cascade_used:
+        click.secho(f"  (cascade: tried {result.cascade_attempts} models)", fg="cyan")
+
     if verbose:
         click.echo()
         click.secho("Classification:", fg="bright_black")
@@ -136,6 +139,7 @@ def stats(db, as_json, detailed):
         data["daily_costs"] = analytics.daily_costs()
         data["savings"] = analytics.savings_vs_baseline()
         data["distribution"] = analytics.distribution()
+        data["cascade"] = analytics.cascade_savings()
 
     tracker.close()
 
@@ -185,6 +189,15 @@ def stats(db, as_json, detailed):
             click.secho("By category:", bold=True)
             for key, info in dist["by_category"].items():
                 click.echo(f"  {key}: {info['count']} requests, ${info['cost']:.6f}")
+
+        cascade = data["cascade"]
+        if cascade["cascade_requests"] > 0:
+            click.echo()
+            click.secho("Cascade routing:", bold=True)
+            click.echo(f"  Cascade requests: {cascade['cascade_requests']}")
+            click.echo(f"  Total cost:       ${cascade['cascade_actual_cost']:.6f}")
+            click.echo(f"  Total attempts:   {cascade['cascade_attempts_total']}")
+            click.echo(f"  Avg attempts:     {cascade['avg_attempts']:.1f}")
 
 
 @cli.command(name="eval")
