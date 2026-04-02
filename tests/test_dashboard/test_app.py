@@ -11,11 +11,11 @@ def _seed_db(db_path):
     tracker = Tracker(db_path)
     conn = tracker.connection
     test_data = [
-        ("2026-04-01T10:00:00", "abc123", "simple", "factual", 0.9, "claude-haiku-4-5-20251001", 10, 20, 0.0001, 50.0, 0, 0, 1),
-        ("2026-04-01T11:00:00", "def456", "medium", "reasoning", 0.8, "claude-sonnet-4-6", 50, 100, 0.001, 200.0, 0, 0, 1),
-        ("2026-04-01T12:00:00", "ghi789", "complex", "code", 0.7, "claude-opus-4-6", 100, 200, 0.01, 500.0, 1, 0, 1),
-        ("2026-04-02T10:00:00", "jkl012", "simple", "factual", 0.95, "claude-haiku-4-5-20251001", 15, 25, 0.00015, 45.0, 0, 0, 1),
-        ("2026-04-02T11:00:00", "mno345", "medium", "creative", 0.75, "claude-sonnet-4-6", 60, 120, 0.0012, 180.0, 0, 0, 1),
+        ("2026-04-01T10:00:00", "abc123", "simple", "factual", 0.9, "claude-haiku-4-5-20251001", 10, 20, 0.0001, 50.0, 0, 0, 1, 0, 0),
+        ("2026-04-01T11:00:00", "def456", "medium", "reasoning", 0.8, "claude-sonnet-4-6", 50, 100, 0.001, 200.0, 0, 0, 1, 0, 0),
+        ("2026-04-01T12:00:00", "ghi789", "complex", "code", 0.7, "claude-opus-4-6", 100, 200, 0.01, 500.0, 1, 0, 1, 0, 0),
+        ("2026-04-02T10:00:00", "jkl012", "simple", "factual", 0.95, "claude-haiku-4-5-20251001", 15, 25, 0.00015, 45.0, 0, 0, 1, 0, 0),
+        ("2026-04-02T11:00:00", "mno345", "medium", "creative", 0.75, "claude-sonnet-4-6", 60, 120, 0.0012, 180.0, 0, 0, 1, 0, 0),
     ]
     for row in test_data:
         conn.execute(_INSERT, row)
