@@ -60,14 +60,36 @@ def route(ctx, prompt, verbose, db):
     router.close()
 
 
+def _make_classifier(name: str):
+    """Factory: return the classifier instance for the given name."""
+    if name == "rules":
+        from mmrouter.classifier.rules import RuleClassifier
+        return RuleClassifier()
+    if name == "embeddings":
+        try:
+            from mmrouter.classifier.embeddings import EmbeddingClassifier
+        except ImportError as e:
+            click.secho(f"Error: {e}", fg="red", err=True)
+            sys.exit(1)
+        return EmbeddingClassifier()
+    click.secho(f"Error: unknown classifier '{name}'", fg="red", err=True)
+    sys.exit(1)
+
+
 @cli.command()
 @click.argument("prompt")
+@click.option(
+    "--classifier",
+    "classifier_name",
+    type=click.Choice(["rules", "embeddings"]),
+    default="rules",
+    show_default=True,
+    help="Classifier to use.",
+)
 @click.pass_context
-def classify(ctx, prompt):
+def classify(ctx, prompt, classifier_name):
     """Classify a prompt without routing (debug)."""
-    from mmrouter.classifier.rules import RuleClassifier
-
-    classifier = RuleClassifier()
+    classifier = _make_classifier(classifier_name)
     result = classifier.classify(prompt)
 
     click.echo(json.dumps({
@@ -117,9 +139,16 @@ def stats(db, as_json):
     show_default=True,
     help="Path to labeled eval dataset YAML.",
 )
-def eval_cmd(dataset):
+@click.option(
+    "--classifier",
+    "classifier_name",
+    type=click.Choice(["rules", "embeddings"]),
+    default="rules",
+    show_default=True,
+    help="Classifier to use.",
+)
+def eval_cmd(dataset, classifier_name):
     """Run classifier accuracy evaluation against labeled dataset."""
-    from mmrouter.classifier.rules import RuleClassifier
     from mmrouter.eval.evaluate import load_eval_set, run_eval
 
     try:
@@ -130,7 +159,7 @@ def eval_cmd(dataset):
 
     click.echo(f"Loaded {len(eval_set)} cases from {dataset}")
 
-    classifier = RuleClassifier()
+    classifier = _make_classifier(classifier_name)
     report = run_eval(classifier, eval_set)
 
     click.echo()
