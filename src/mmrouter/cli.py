@@ -2,6 +2,7 @@
 
 import json
 import sys
+from pathlib import Path
 
 import click
 
@@ -77,6 +78,15 @@ def _make_classifier(name: str, config_path: str = "configs/default.yaml"):
         except ImportError as e:
             click.secho(f"Error: {e}", fg="red", err=True)
             sys.exit(1)
+        # Check if config specifies a trained model path
+        try:
+            from mmrouter.router.config import load_config
+            cfg = load_config(config_path)
+            trained_path = cfg.classifier.trained_model
+        except Exception:
+            trained_path = None
+        if trained_path and Path(trained_path).exists():
+            return EmbeddingClassifier.load(trained_path)
         return EmbeddingClassifier()
     if name == "llm":
         try:
@@ -298,6 +308,130 @@ def eval_cmd(dataset, classifier_name):
     else:
         click.echo()
         click.secho("No misclassifications.", fg="green")
+
+
+@cli.command()
+@click.option(
+    "--data",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to labeled YAML training data.",
+)
+@click.option(
+    "--output",
+    required=True,
+    type=click.Path(),
+    help="Output directory for trained model.",
+)
+@click.option("--k", default=5, type=int, show_default=True, help="Number of neighbors for kNN.")
+@click.option(
+    "--model-name",
+    default="all-MiniLM-L6-v2",
+    show_default=True,
+    help="Sentence-transformers model name.",
+)
+@click.option(
+    "--eval-split",
+    default=0.0,
+    type=float,
+    help="Fraction of data to hold out for evaluation (0.0 to 0.5).",
+)
+def train(data, output, k, model_name, eval_split):
+    """Train an embedding classifier from labeled YAML data."""
+    import random
+
+    try:
+        from mmrouter.classifier.embeddings import EmbeddingClassifier
+    except ImportError as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    if eval_split < 0 or eval_split > 0.5:
+        click.secho("Error: --eval-split must be between 0.0 and 0.5", fg="red", err=True)
+        sys.exit(1)
+
+    if eval_split > 0:
+        import yaml as _yaml
+        from mmrouter.eval.evaluate import EvalCase, run_eval
+
+        with open(data) as f:
+            raw = _yaml.safe_load(f)
+
+        if not isinstance(raw, list) or len(raw) < 2:
+            click.secho("Error: need at least 2 examples for eval split", fg="red", err=True)
+            sys.exit(1)
+
+        shuffled = list(raw)
+        random.shuffle(shuffled)
+        split_idx = max(1, int(len(shuffled) * eval_split))
+        eval_entries = shuffled[:split_idx]
+        train_entries = shuffled[split_idx:]
+
+        if len(train_entries) == 0:
+            click.secho("Error: no training examples after split", fg="red", err=True)
+            sys.exit(1)
+
+        # Write temp training file
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
+            _yaml.dump(train_entries, tmp)
+            train_path = tmp.name
+
+        click.echo(f"Split: {len(train_entries)} train, {len(eval_entries)} eval")
+
+        try:
+            clf = EmbeddingClassifier(
+                model_name=model_name, examples_path=train_path, k=k,
+            )
+        except (ValueError, FileNotFoundError) as e:
+            click.secho(f"Error: {e}", fg="red", err=True)
+            sys.exit(1)
+        finally:
+            Path(train_path).unlink(missing_ok=True)
+
+        # Evaluate on held-out data
+        eval_cases = []
+        for entry in eval_entries:
+            try:
+                eval_cases.append(
+                    EvalCase(
+                        prompt=entry["prompt"],
+                        expected_complexity=entry["complexity"],
+                        expected_category=entry["category"],
+                    )
+                )
+            except (KeyError, ValueError):
+                continue
+
+        if eval_cases:
+            report = run_eval(clf, eval_cases)
+            click.echo()
+            click.secho("Eval on held-out split:", bold=True)
+            click.echo(f"  Accuracy: {report.overall_accuracy:.1%} ({report.correct}/{report.total})")
+            click.echo(f"  Complexity: {report.complexity_accuracy:.1%}")
+            click.echo(f"  Category: {report.category_accuracy:.1%}")
+    else:
+        try:
+            clf = EmbeddingClassifier(
+                model_name=model_name, examples_path=data, k=k,
+            )
+        except (ValueError, FileNotFoundError) as e:
+            click.secho(f"Error: {e}", fg="red", err=True)
+            sys.exit(1)
+
+    out_dir = clf.save(output)
+
+    click.echo()
+    click.secho("Training complete", bold=True)
+    click.echo(f"  Examples: {len(clf._prompts)}")
+    click.echo(f"  Model: {model_name}")
+    click.echo(f"  k: {k}")
+    click.echo(f"  Saved to: {out_dir}")
+    click.echo()
+    click.echo("To use this model, set in your config YAML:")
+    click.echo(f"  classifier:")
+    click.echo(f"    strategy: embeddings")
+    click.echo(f"    trained_model: {out_dir}")
 
 
 @cli.command(name="compare")

@@ -35,6 +35,7 @@ _classifier_schema = sy.Map({
     sy.Optional("strategy"): sy.Str(),
     sy.Optional("model"): sy.Str(),
     sy.Optional("threshold"): sy.Float(),
+    sy.Optional("trained_model"): sy.Str(),
 })
 
 _provider_schema = sy.Map({
@@ -120,6 +121,7 @@ def load_config(path: str | Path) -> RoutingConfig:
             strategy=cls_data.get("strategy", "rules"),
             model=cls_data.get("model"),
             threshold=float(cls_data["threshold"]) if "threshold" in cls_data else 0.7,
+            trained_model=cls_data.get("trained_model"),
         )
 
     provider = ProviderConfig()
