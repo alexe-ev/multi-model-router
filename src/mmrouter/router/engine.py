@@ -17,6 +17,7 @@ from mmrouter.models import (
 from mmrouter.providers.base import ProviderBase
 from mmrouter.providers.litellm_provider import LiteLLMProvider, ProviderError
 from mmrouter.router.config import load_config
+from mmrouter.router.fallback import CircuitBreakerRegistry, CircuitOpenError
 from mmrouter.tracker.logger import Tracker
 
 
@@ -43,6 +44,7 @@ class Router:
         self._classifier = classifier or RuleClassifier()
         self._provider = provider or LiteLLMProvider(self._config.provider)
         self._tracker = tracker or Tracker(db_path)
+        self._breakers = CircuitBreakerRegistry(self._config.provider)
 
     def route(self, prompt: str) -> RoutingResult:
         classification = self._classifier.classify(prompt)
@@ -58,8 +60,16 @@ class Router:
         last_error = None
 
         for i, model in enumerate(models_to_try):
+            breaker = self._breakers.get(model)
+            try:
+                breaker.check()
+            except CircuitOpenError as e:
+                last_error = e
+                continue
+
             try:
                 completion = self._provider.complete(prompt, model)
+                breaker.record_success()
                 if i > 0:
                     fallback_used = True
 
@@ -80,9 +90,8 @@ class Router:
 
                 return result
             except ProviderError as e:
+                breaker.record_failure(e.retryable)
                 last_error = e
-                if not e.retryable:
-                    continue
                 continue
 
         raise RuntimeError(

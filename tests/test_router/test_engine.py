@@ -2,8 +2,15 @@
 
 import pytest
 
+from mmrouter.classifier import ClassifierBase
 from mmrouter.classifier.rules import RuleClassifier
-from mmrouter.models import CompletionResult, Complexity, Category, ProviderConfig
+from mmrouter.models import (
+    ClassificationResult,
+    CompletionResult,
+    Complexity,
+    Category,
+    ProviderConfig,
+)
 from mmrouter.providers.base import ProviderBase
 from mmrouter.providers.litellm_provider import ProviderError
 from mmrouter.router.engine import Router
@@ -128,4 +135,93 @@ class TestRouter:
 
         assert result.classification.complexity == Complexity.COMPLEX
         assert "opus" in result.model_used.lower() or "sonnet" in result.model_used.lower()
+        router.close()
+
+
+class MockClassifier(ClassifierBase):
+    """Classifier that returns a fixed result."""
+
+    def __init__(self, complexity: Complexity, category: Category):
+        self._result = ClassificationResult(
+            complexity=complexity, category=category, confidence=0.9
+        )
+
+    def classify(self, prompt: str) -> ClassificationResult:
+        return self._result
+
+
+class FailingMockProvider(ProviderBase):
+    """Provider with configurable retryable flag per failing model."""
+
+    def __init__(self, fail_models: dict[str, bool] | None = None):
+        self._fail_models = fail_models or {}
+        self.calls: list[tuple[str, str]] = []
+
+    def complete(self, prompt, model, **kwargs):
+        self.calls.append((prompt, model))
+        if model in self._fail_models:
+            retryable = self._fail_models[model]
+            raise ProviderError(f"{model} is down", retryable=retryable)
+        return CompletionResult(
+            content=f"Response from {model}",
+            model=model,
+            tokens_in=10,
+            tokens_out=20,
+            cost=0.001,
+            latency_ms=100.0,
+        )
+
+
+class TestCircuitBreakerIntegration:
+    def test_circuit_opens_after_repeated_failures(self, tmp_path):
+        """After 5 transient failures, haiku circuit opens and is skipped."""
+        provider = FailingMockProvider(
+            fail_models={"claude-haiku-4-5-20251001": True}
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(
+            "configs/default.yaml",
+            classifier=classifier,
+            provider=provider,
+            tracker=tracker,
+        )
+
+        # Route 5 times: each tries haiku (fails) then falls back to sonnet
+        for _ in range(5):
+            result = router.route("test")
+            assert "sonnet" in result.model_used.lower()
+
+        # After 5 transient failures, haiku circuit should be open
+        # 6th call should skip haiku entirely, only call sonnet
+        provider.calls.clear()
+        result = router.route("test")
+        assert "sonnet" in result.model_used.lower()
+        assert len(provider.calls) == 1  # only sonnet, haiku skipped
+        router.close()
+
+    def test_permanent_error_doesnt_trip_circuit(self, tmp_path):
+        """Permanent errors (retryable=False) don't trip the circuit breaker."""
+        provider = FailingMockProvider(
+            fail_models={"claude-haiku-4-5-20251001": False}
+        )
+        tracker = Tracker(tmp_path / "test.db")
+        classifier = MockClassifier(Complexity.SIMPLE, Category.FACTUAL)
+        router = Router(
+            "configs/default.yaml",
+            classifier=classifier,
+            provider=provider,
+            tracker=tracker,
+        )
+
+        # Route 10 times with permanent haiku failure
+        for _ in range(10):
+            result = router.route("test")
+            assert "sonnet" in result.model_used.lower()
+
+        # 11th call should still try haiku first (circuit never opened)
+        provider.calls.clear()
+        result = router.route("test")
+        assert "sonnet" in result.model_used.lower()
+        assert len(provider.calls) == 2  # tried haiku, then sonnet
         router.close()
