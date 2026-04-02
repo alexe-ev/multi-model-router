@@ -1,0 +1,66 @@
+version: "1"
+
+routes:
+  simple:
+    factual:
+      model: claude-haiku-4-5-20251001
+      fallbacks:
+        - claude-sonnet-4-6
+    reasoning:
+      model: claude-haiku-4-5-20251001
+      fallbacks:
+        - claude-sonnet-4-6
+    creative:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+    code:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+
+  medium:
+    factual:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+    reasoning:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+    creative:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+    code:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+
+  complex:
+    factual:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+    reasoning:
+      model: claude-opus-4-6
+      fallbacks:
+        - claude-sonnet-4-6
+    creative:
+      model: claude-opus-4-6
+      fallbacks:
+        - claude-sonnet-4-6
+    code:
+      model: claude-opus-4-6
+      fallbacks:
+        - claude-sonnet-4-6
+
+classifier:
+  strategy: rules
+  threshold: "0.7"
+
+provider:
+  timeout_ms: 30000
+  max_retries: 2
+  circuit_breaker_threshold: 5
+  circuit_breaker_reset_ms: 60000

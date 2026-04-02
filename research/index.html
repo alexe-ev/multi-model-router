@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Model Router: Обучение</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3345;
+    --text: #e1e4ed;
+    --text-dim: #8b90a0;
+    --accent: #6c8aff;
+    --accent-dim: #3d5afe;
+    --green: #4caf7d;
+    --orange: #e8a94e;
+    --red: #e06370;
+    --code-bg: #161922;
+    --nav-w: 280px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  nav {
+    position: fixed; top: 0; left: 0;
+    width: var(--nav-w); height: 100vh;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 24px 0; z-index: 100;
+  }
+  nav .logo {
+    padding: 0 20px 20px; font-size: 14px; font-weight: 700;
+    letter-spacing: .5px; color: var(--accent); text-transform: uppercase;
+    border-bottom: 1px solid var(--border); margin-bottom: 12px;
+  }
+  nav .ch {
+    padding: 12px 20px 4px; font-size: 11px; font-weight: 600;
+    color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase;
+  }
+  nav a {
+    display: block; padding: 6px 20px 6px 28px;
+    color: var(--text-dim); text-decoration: none; font-size: 13px;
+    transition: all .15s; border-left: 3px solid transparent;
+  }
+  nav a:hover, nav a.active {
+    color: var(--text); background: var(--surface2); border-left-color: var(--accent);
+  }
+  main {
+    margin-left: var(--nav-w); max-width: 920px; padding: 48px 48px 120px;
+  }
+  h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; color: #fff; }
+  .subtitle { color: var(--text-dim); font-size: 16px; margin-bottom: 48px; line-height: 1.5; }
+  h2 {
+    font-size: 24px; font-weight: 700; margin: 56px 0 12px;
+    padding-top: 24px; border-top: 1px solid var(--border); color: #fff;
+  }
+  h2:first-of-type { border-top: none; margin-top: 0; }
+  h3 { font-size: 18px; font-weight: 600; margin: 32px 0 8px; color: var(--accent); }
+  h4 { font-size: 15px; font-weight: 600; margin: 20px 0 6px; color: var(--text); }
+  p { margin-bottom: 14px; }
+  a { color: var(--accent); }
+  strong { color: #fff; font-weight: 600; }
+  ul, ol { margin: 0 0 14px 24px; }
+  li { margin-bottom: 4px; }
+  .table-wrap { overflow-x: auto; margin: 16px 0 24px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; padding: 10px 12px; background: var(--surface2);
+    color: var(--text-dim); font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .5px;
+    border-bottom: 2px solid var(--border); white-space: nowrap;
+  }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: var(--surface); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px 20px; overflow-x: auto;
+    margin: 12px 0 20px; font-size: 13px; line-height: 1.6;
+  }
+  code {
+    font-family: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace; font-size: 13px;
+  }
+  p code, li code, td code {
+    background: var(--surface2); padding: 2px 6px; border-radius: 4px; font-size: 12px;
+  }
+  .box {
+    border-left: 4px solid var(--accent); background: var(--surface);
+    padding: 14px 18px; margin: 16px 0 20px; border-radius: 0 8px 8px 0;
+  }
+  .box.warn { border-left-color: var(--orange); }
+  .box.good { border-left-color: var(--green); }
+  .box.red { border-left-color: var(--red); }
+  .box .label {
+    font-weight: 600; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .5px; margin-bottom: 4px;
+  }
+  .box .label { color: var(--accent); }
+  .box.warn .label { color: var(--orange); }
+  .box.good .label { color: var(--green); }
+  .box.red .label { color: var(--red); }
+  .tag {
+    display: inline-block; font-size: 11px; padding: 2px 8px;
+    border-radius: 4px; font-weight: 600; margin-right: 4px;
+  }
+  .tag.cheap { background: #1b3a2a; color: var(--green); }
+  .tag.mid   { background: #3a3520; color: var(--orange); }
+  .tag.exp   { background: #3a1f22; color: var(--red); }
+
+  .hero-number {
+    font-size: 48px; font-weight: 800; color: var(--accent);
+    line-height: 1.1; margin: 8px 0;
+  }
+  .hero-number .unit { font-size: 20px; color: var(--text-dim); font-weight: 400; }
+  .hero-row {
+    display: flex; gap: 32px; margin: 24px 0 32px; flex-wrap: wrap;
+  }
+  .hero-card {
+    flex: 1; min-width: 200px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+  }
+  .hero-card .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+
+  .scenario {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; margin: 20px 0 24px;
+  }
+  .scenario .title {
+    font-size: 13px; font-weight: 600; color: var(--orange);
+    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px;
+  }
+
+  .takeaway {
+    background: linear-gradient(135deg, rgba(108,138,255,.08), rgba(108,138,255,.02));
+    border: 1px solid rgba(108,138,255,.2);
+    border-radius: 12px; padding: 20px; margin: 24px 0 32px;
+  }
+  .takeaway .title {
+    font-size: 13px; font-weight: 700; color: var(--accent);
+    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px;
+  }
+  .takeaway ul { margin-bottom: 0; }
+
+  .decision {
+    background: var(--surface); border: 1px solid var(--green);
+    border-radius: 12px; padding: 20px; margin: 20px 0 24px;
+  }
+  .decision .title {
+    font-size: 13px; font-weight: 700; color: var(--green);
+    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px;
+  }
+
+  .vs {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0 24px;
+  }
+  .vs > div {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px;
+  }
+  .vs .h { font-weight: 600; margin-bottom: 8px; font-size: 14px; }
+
+  .menu-toggle { display: none; }
+  @media (max-width: 860px) {
+    nav { transform: translateX(-100%); transition: transform .25s; }
+    nav.open { transform: translateX(0); }
+    main { margin-left: 0; padding: 24px 20px 80px; }
+    .menu-toggle {
+      display: block; position: fixed; top: 12px; left: 12px; z-index: 200;
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); width: 40px; height: 40px;
+      border-radius: 8px; font-size: 20px; cursor: pointer;
+    }
+    .hero-row { flex-direction: column; }
+    .vs { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<button class="menu-toggle" onclick="document.querySelector('nav').classList.toggle('open')">&#9776;</button>
+
+<nav>
+  <div class="logo">Multi-Model Router</div>
+  <div class="ch">Старт</div>
+  <a href="#problem">Проблема</a>
+  <a href="#how-routing-works">Что такое routing</a>
+
+  <div class="ch">Глава 1: Экономика</div>
+  <a href="#models">Ландшафт моделей</a>
+  <a href="#pricing">Цены и токены</a>
+  <a href="#caching">Кэширование и batch</a>
+  <a href="#econ-takeaway">Выводы</a>
+
+  <div class="ch">Глава 2: Классификация</div>
+  <a href="#why-classify">Зачем классифицировать</a>
+  <a href="#rules">Rule-based</a>
+  <a href="#embeddings">Embeddings</a>
+  <a href="#llm-classifier">LLM-as-classifier</a>
+  <a href="#class-decision">Как выбрать подход</a>
+
+  <div class="ch">Глава 3: Routing</div>
+  <a href="#basic-routing">Базовый routing</a>
+  <a href="#cascade">Cascade</a>
+  <a href="#confidence">Confidence-based</a>
+  <a href="#routellm">RouteLLM и другие</a>
+  <a href="#routing-decision">Как выбрать паттерн</a>
+
+  <div class="ch">Глава 4: Надежность</div>
+  <a href="#fallback">Fallback chains</a>
+  <a href="#circuit-breaker">Circuit breaker</a>
+  <a href="#retry">Retry и timeouts</a>
+
+  <div class="ch">Глава 5: Измерение</div>
+  <a href="#why-observe">Зачем наблюдать</a>
+  <a href="#metrics">Какие метрики</a>
+  <a href="#tools">Инструменты</a>
+  <a href="#own-layer">Своя observability</a>
+
+  <div class="ch">Практика</div>
+  <a href="#example">Сквозной пример</a>
+  <a href="#summary">Итог и next steps</a>
+  <a href="#resources">Ресурсы</a>
+</nav>
+
+<main>
+
+<h1>Зачем маршрутизировать LLM-запросы</h1>
+<p class="subtitle">Обучающий материал: от проблемы к работающему решению. Каждая глава строится на предыдущей. В конце: сквозной пример и чек-лист, с которым можно начинать строить.</p>
+
+
+<!-- ============================================================ -->
+<!-- INTRO                                                         -->
+<!-- ============================================================ -->
+
+<h2 id="problem">Проблема: одна модель на все запросы</h2>
+
+<p>Представь: ты запустил AI-продукт. Чат-бот для customer support, или coding assistant, или аналитический инструмент. У тебя 10,000 запросов в день.</p>
+
+<p>Перед тобой выбор: какую модель использовать?</p>
+
+<div class="vs">
+<div>
+  <div class="h" style="color: var(--red);">Вариант A: Все через Opus</div>
+  <p>Качество отличное на любом запросе. Но ты платишь $25/1M output-токенов за каждый ответ, включая "Какой у вас график работы?" и "Спасибо, все понятно".</p>
+  <p style="margin:0"><strong>Стоимость: ~$12,500/мес</strong></p>
+</div>
+<div>
+  <div class="h" style="color: var(--orange);">Вариант B: Все через Haiku</div>
+  <p>Дешево. Но на сложных вопросах ("Сравните три тарифных плана с учетом моей ситуации") ответ поверхностный и пользователь уходит недовольным.</p>
+  <p style="margin:0"><strong>Стоимость: ~$2,500/мес, но качество падает</strong></p>
+</div>
+</div>
+
+<p>Это ложная дилемма. На практике ~70% запросов в большинстве продуктов простые: фактические вопросы, повторяющиеся сценарии, короткие уточнения. И только ~30% действительно требуют мощной модели.</p>
+
+<p>Идея routing: <strong>не человек выбирает модель, а система автоматически направляет каждый запрос к оптимальной модели</strong>, исходя из его сложности и типа.</p>
+
+<div class="hero-row">
+<div class="hero-card">
+  <div class="label">Без routing (все Opus)</div>
+  <div class="hero-number">$12,500<span class="unit">/мес</span></div>
+</div>
+<div class="hero-card">
+  <div class="label">С routing (70/30 split)</div>
+  <div class="hero-number">$4,200<span class="unit">/мес</span></div>
+</div>
+<div class="hero-card">
+  <div class="label">Экономия</div>
+  <div class="hero-number" style="color: var(--green);">66%</div>
+  <div style="color: var(--text-dim); font-size: 13px;">при сопоставимом качестве</div>
+</div>
+</div>
+
+
+<h3 id="how-routing-works">Как работает routing (30 секунд)</h3>
+
+<p>Весь механизм сводится к четырем шагам:</p>
+
+<ol>
+<li><strong>Классифицировать</strong> входящий запрос: какая сложность (simple / medium / complex)? какой тип (factual / reasoning / creative / code)?</li>
+<li><strong>Маршрутизировать:</strong> по конфигу (YAML-файл) определить, какая модель обрабатывает эту комбинацию сложности и типа</li>
+<li><strong>Подстраховать:</strong> если выбранная модель недоступна (timeout, rate limit, outage), автоматически переключить на fallback</li>
+<li><strong>Измерить:</strong> логировать каждый запрос: какая модель использована, сколько токенов, стоимость, латентность, качество</li>
+</ol>
+
+<p>Дальше мы разберем каждый шаг. Начнем с экономики: нужно понимать, между чем мы выбираем.</p>
+
+
+<!-- ============================================================ -->
+<!-- CHAPTER 1: ECONOMICS                                          -->
+<!-- ============================================================ -->
+
+<h2 id="models">Глава 1: Экономика моделей</h2>
+
+<p>Прежде чем строить router, нужно понимать: какие модели существуют, сколько стоят, и где разница в качестве оправдывает разницу в цене.</p>
+
+<h3>Ландшафт моделей (начало 2026)</h3>
+
+<p>У каждого провайдера есть линейка от дорогих и мощных до дешевых и быстрых. Это не случайность: именно этот спектр делает routing возможным.</p>
+
+<div class="table-wrap"><table>
+<tr><th>Tier</th><th>Anthropic</th><th>OpenAI</th><th>Google</th><th>Характер</th></tr>
+<tr>
+  <td><span class="tag exp">Flagship</span></td>
+  <td>Opus 4.6<br><span style="color:var(--text-dim)">$5 / $25</span></td>
+  <td>GPT-5.4<br><span style="color:var(--text-dim)">$2.50 / $15</span></td>
+  <td>Gemini 3.1 Pro<br><span style="color:var(--text-dim)">$2 / $12</span></td>
+  <td>Complex reasoning, agentic coding, hard prompts. Лучшее качество.</td>
+</tr>
+<tr>
+  <td><span class="tag mid">Mid-tier</span></td>
+  <td>Sonnet 4.6<br><span style="color:var(--text-dim)">$3 / $15</span></td>
+  <td>GPT-4.1 / GPT-5<br><span style="color:var(--text-dim)">$2 / $8</span></td>
+  <td>Gemini 3 Flash<br><span style="color:var(--text-dim)">$0.50 / $3</span></td>
+  <td>Баланс. Основная production-модель для большинства задач.</td>
+</tr>
+<tr>
+  <td><span class="tag cheap">Budget</span></td>
+  <td>Haiku 4.5<br><span style="color:var(--text-dim)">$1 / $5</span></td>
+  <td>GPT-4.1 Nano<br><span style="color:var(--text-dim)">$0.05 / $0.20</span></td>
+  <td>Gemini 2.5 Flash-Lite<br><span style="color:var(--text-dim)">$0.10 / $0.40</span></td>
+  <td>Classification, extraction, простые Q&A, высокий volume.</td>
+</tr>
+</table></div>
+
+<p><em>Цены: input / output за 1M токенов.</em></p>
+
+<div class="box">
+<div class="label">Обрати внимание на разброс</div>
+Разница между самым дешевым (GPT-4.1 Nano: $0.20/1M output) и самым дорогим (Opus 4.6: $25/1M output) составляет <strong>125x</strong>. Это не 20-30% экономии, это порядки. Вот почему routing имеет смысл: даже неидеальная классификация дает огромную экономию.
+</div>
+
+
+<h3>Где разница в качестве критична, а где нет</h3>
+
+<p>Это центральный вопрос routing. Не "какая модель лучше?", а "на каких задачах дешевая модель выдает результат, неотличимый от дорогой?"</p>
+
+<div class="vs">
+<div>
+  <div class="h" style="color: var(--red);">Нужна мощная модель</div>
+  <ul style="margin-bottom:0">
+    <li>Мультишаговый reasoning с неоднозначностью</li>
+    <li>Архитектурные решения в коде, большие рефакторинги</li>
+    <li>Синтез информации из нескольких доменов</li>
+    <li>Reasoning по 50K+ токенов контекста</li>
+    <li>Creative writing для публикации</li>
+  </ul>
+</div>
+<div>
+  <div class="h" style="color: var(--green);">Хватит дешевой</div>
+  <ul style="margin-bottom:0">
+    <li>Sentiment, intent detection, classification</li>
+    <li>Data extraction (имена, даты, суммы)</li>
+    <li>FAQ и фактические вопросы</li>
+    <li>Конвертация форматов (text &rarr; JSON)</li>
+    <li>Суммаризация коротких документов</li>
+  </ul>
+</div>
+</div>
+
+<p>Данные LMSYS Chatbot Arena (крупнейший crowdsourced бенчмарк, где реальные пользователи вслепую сравнивают ответы двух моделей) подтверждают: на factual Q&A и extraction mid-tier модели набирают Elo-рейтинг, статистически неотличимый от flagship. Разрыв проявляется на hard prompts, coding и reasoning.</p>
+
+
+<h3 id="pricing">Как считать стоимость запроса</h3>
+
+<p>LLM API тарифицируют по токенам. Формула простая:</p>
+
+<pre><code>Cost = (input_tokens x input_price / 1M) + (output_tokens x output_price / 1M)</code></pre>
+
+<p>Но есть нюанс: <strong>output-токены в 3-5x дороже input</strong>. Причина техническая: генерация output требует последовательных вычислений, а input обрабатывается параллельно.</p>
+
+<h4>Типичные размеры запросов</h4>
+<div class="table-wrap"><table>
+<tr><th>Тип запроса</th><th>Input</th><th>Output</th><th>Haiku 4.5</th><th>Sonnet 4.6</th><th>Opus 4.6</th></tr>
+<tr><td>Classification / extraction</td><td class="num">300</td><td class="num">50</td><td class="num">$0.00055</td><td class="num">$0.0017</td><td class="num">$0.0028</td></tr>
+<tr><td>Customer support ответ</td><td class="num">2,500</td><td class="num">1,200</td><td class="num">$0.0085</td><td class="num">$0.026</td><td class="num">$0.043</td></tr>
+<tr><td>Complex reasoning</td><td class="num">5,000</td><td class="num">2,000</td><td class="num">$0.015</td><td class="num">$0.045</td><td class="num">$0.075</td></tr>
+<tr><td>Code generation (функция)</td><td class="num">1,000</td><td class="num">800</td><td class="num">$0.005</td><td class="num">$0.015</td><td class="num">$0.025</td></tr>
+<tr><td>RAG с контекстом</td><td class="num">15,000</td><td class="num">1,000</td><td class="num">$0.02</td><td class="num">$0.06</td><td class="num">$0.1</td></tr>
+</table></div>
+
+<div class="scenario">
+<div class="title">Пример: масштаб имеет значение</div>
+<p>10,000 запросов/день, средний запрос = customer support:</p>
+<ul>
+<li><strong>Все через Opus:</strong> $0.043 x 10K x 30 = <strong>$12,900/мес</strong></li>
+<li><strong>Все через Sonnet:</strong> $0.026 x 10K x 30 = <strong>$7,800/мес</strong></li>
+<li><strong>Routing (70% Haiku, 30% Opus):</strong> (7K x $0.0085 + 3K x $0.043) x 30 = <strong>$5,655/мес</strong></li>
+</ul>
+<p style="margin:0">Экономия routing vs all-Opus: <strong>$7,245/мес (56%)</strong>. И это консервативный split. С оптимизированной классификацией можно довести до 70%+.</p>
+</div>
+
+
+<h3 id="caching">Prompt caching и batch API: дополнительная экономия</h3>
+
+<p>Помимо routing, есть два механизма снижения стоимости, которые стакаются с ним:</p>
+
+<h4>Prompt caching</h4>
+<p>Если ваш system prompt или контекст повторяется между запросами (а он почти всегда повторяется), провайдер может кэшировать его и брать за повторное чтение в 10x меньше.</p>
+
+<div class="table-wrap"><table>
+<tr><th>Провайдер</th><th>Скидка на cache hit</th><th>Наценка на write</th><th>Настройка</th></tr>
+<tr><td>Anthropic</td><td><strong>90%</strong></td><td>25% (5-мин) или 100% (1-час)</td><td>Явная: <code>cache_control</code> в API</td></tr>
+<tr><td>OpenAI</td><td><strong>75-90%</strong> (зависит от модели)</td><td>Нет</td><td>Автоматическая</td></tr>
+<tr><td>Google</td><td><strong>90%</strong></td><td>Storage: $1-4.50/1M токенов/час</td><td>Явная</td></tr>
+</table></div>
+
+<h4>Batch API</h4>
+<p>Если запросы не нужно обрабатывать real-time (eval, аналитика, bulk processing), batch API дает <strong>50% скидку</strong> у всех трех провайдеров. Комбинация batch + caching может дать до 95% экономии на input-токенах.</p>
+
+
+<div class="takeaway" id="econ-takeaway">
+<div class="title">Выводы главы 1</div>
+<ul>
+<li>Разброс цен между моделями: до 125x. Даже грубый routing дает десятки процентов экономии.</li>
+<li>70-80% запросов в типичном продукте не требуют flagship-модели.</li>
+<li>Output-токены в 3-5x дороже input. Оптимизация длины ответа дает непропорциональную экономию.</li>
+<li>Prompt caching (90% скидка) и batch API (50%) стакаются с routing.</li>
+<li>При 10K req/day разница между "все через Opus" и routing: тысячи долларов в месяц.</li>
+</ul>
+</div>
+
+
+<!-- ============================================================ -->
+<!-- CHAPTER 2: CLASSIFICATION                                     -->
+<!-- ============================================================ -->
+
+<h2 id="why-classify">Глава 2: Как классифицировать запросы</h2>
+
+<p>Routing работает, только если мы можем понять, какой запрос перед нами: простой или сложный, фактический или творческий. Это задача классификации.</p>
+
+<p>Есть три подхода, от простого к сложному. Каждый следующий точнее, но дороже и медленнее. Смысл в том, чтобы выбрать подход, соответствующий стадии продукта.</p>
+
+
+<h3 id="rules">Подход 1: Rule-based (правила)</h3>
+
+<p>Самый простой: набор if/else правил на основе наблюдаемых свойств запроса.</p>
+
+<pre><code>def classify(prompt: str) -> str:
+    tokens = prompt.split()
+
+    # Длина как прокси сложности
+    if len(tokens) < 15:
+        complexity = "simple"
+    elif len(tokens) < 80:
+        complexity = "medium"
+    else:
+        complexity = "complex"
+
+    # Ключевые слова для категории
+    code_signals = ["code", "function", "debug", "error", "```"]
+    if any(s in prompt.lower() for s in code_signals):
+        category = "code"
+    elif any(s in prompt.lower() for s in ["explain", "compare", "analyze", "why"]):
+        category = "reasoning"
+    else:
+        category = "factual"
+
+    return complexity, category</code></pre>
+
+<div class="vs">
+<div>
+  <div class="h" style="color: var(--green);">Плюсы</div>
+  <ul style="margin-bottom:0">
+    <li>Latency: &lt;1ms</li>
+    <li>Cost: $0</li>
+    <li>Прозрачность: видно почему именно это решение</li>
+    <li>Нет зависимостей</li>
+  </ul>
+</div>
+<div>
+  <div class="h" style="color: var(--red);">Минусы</div>
+  <ul style="margin-bottom:0">
+    <li>Accuracy: 60-75%</li>
+    <li>Хрупкость: "What's 2+2?" = simple, но "What's the integral of e^(x^2)?" тоже выглядит коротким</li>
+    <li>Не генерализует на новые формулировки</li>
+  </ul>
+</div>
+</div>
+
+<p><strong>Когда хватит:</strong> MVP, первая неделя разработки, узкий домен с предсказуемыми запросами, или как первый слой в гибридном подходе.</p>
+
+
+<h3 id="embeddings">Подход 2: Embedding-based (по похожести)</h3>
+
+<p>Идея: если у тебя есть примеры запросов каждой категории, можно находить ближайшую категорию для нового запроса по семантической близости.</p>
+
+<h4>Как это работает</h4>
+<ol>
+<li><strong>Готовишь примеры:</strong> 20-50 запросов на категорию с правильными метками. "Какой курс доллара?" &rarr; simple/factual. "Проанализируй динамику за 3 года" &rarr; complex/reasoning.</li>
+<li><strong>Эмбеддишь:</strong> каждый пример превращается в числовой вектор через sentence-transformer модель (например, <code>all-MiniLM-L6-v2</code>: бесплатная, работает локально).</li>
+<li><strong>При запросе:</strong> входящий промпт эмбеддится, считается cosine similarity со всеми примерами, запрос назначается категории ближайших (kNN).</li>
+</ol>
+
+<p>Готовая реализация: <a href="https://github.com/aurelio-labs/semantic-router" target="_blank">Semantic Router</a> (MIT, open-source). Снижает latency классификации с ~5000ms (LLM) до ~100ms.</p>
+
+<div class="vs">
+<div>
+  <div class="h" style="color: var(--green);">Плюсы</div>
+  <ul style="margin-bottom:0">
+    <li>Accuracy: 75-90%</li>
+    <li>Latency: 50-200ms</li>
+    <li>Cost: ~$0.0001 (локально) или ~$0.0002 (через API)</li>
+    <li>Детерминистично: один запрос &rarr; всегда один ответ</li>
+  </ul>
+</div>
+<div>
+  <div class="h" style="color: var(--red);">Минусы</div>
+  <ul style="margin-bottom:0">
+    <li>Cold start: нужны labeled примеры</li>
+    <li>Плохо с запросами, непохожими ни на один пример</li>
+    <li>Нужно обновлять примеры по мере изменения паттернов</li>
+  </ul>
+</div>
+</div>
+
+<p><strong>Когда использовать:</strong> production-система с известными категориями запросов. Когда уже собрал достаточно данных, чтобы набрать по 20+ примеров на категорию.</p>
+
+
+<h3 id="llm-classifier">Подход 3: LLM-as-classifier</h3>
+
+<p>Используем саму LLM (дешевую и быструю) для классификации запроса. По сути, задаем LLM вопрос: "какой это тип запроса?"</p>
+
+<h4>Zero-shot (без примеров)</h4>
+<pre><code>System: Classify the user query.
+Complexity: simple | medium | complex
+Category: factual | reasoning | creative | code
+Return only JSON: {"complexity": "...", "category": "..."}
+
+User: {query}</code></pre>
+
+<p>Промпт короткий, latency минимальная (200-500ms на Haiku). Хорошо работает, когда категории интуитивно понятные. Accuracy: 70-85%.</p>
+
+<h4>Few-shot (с примерами)</h4>
+<p>Добавляем 3-10 примеров на категорию прямо в промпт. Accuracy растет до 80-92%, но промпт становится длиннее, а значит каждая классификация дороже.</p>
+
+<div class="box warn">
+<div class="label">Экономический парадокс</div>
+Каждый classification call стоит денег и добавляет latency. При 100K запросов/день стоимость классификации Haiku ($0.001/call) = $100/день = $3,000/мес. Это оправдано только если downstream-экономия больше. Считай ROI классификации как отдельную строку.
+</div>
+
+
+<h3 id="class-decision">Как выбрать подход: decision framework</h3>
+
+<div class="decision">
+<div class="title">Чек-лист выбора стратегии классификации</div>
+<p><strong>Начни с вопроса: что у тебя уже есть?</strong></p>
+<ul>
+<li><strong>Нет данных, нужно запуститься сегодня</strong> &rarr; Rule-based. Accuracy 60-75% лучше, чем 0%. Собирай логи для следующего шага.</li>
+<li><strong>Есть 100+ примеров запросов с метками</strong> &rarr; Embedding-based. Лучший баланс accuracy/cost/latency.</li>
+<li><strong>Категории сложные, формулировки разнообразные, accuracy критична</strong> &rarr; LLM-as-classifier (few-shot).</li>
+<li><strong>Не уверен</strong> &rarr; начни с rule-based, через неделю переключи на embeddings. Можно запускать оба параллельно и сравнивать (shadow mode).</li>
+</ul>
+<p style="margin:0"><strong>Гибридный подход</strong> (часто лучший): rule-based как первый фильтр для очевидных случаев, embedding-based для остального. LLM-classifier только для запросов с низким confidence.</p>
+</div>
+
+<div class="takeaway">
+<div class="title">Выводы главы 2</div>
+<ul>
+<li>Три подхода: rules (быстро, неточно) &rarr; embeddings (баланс) &rarr; LLM (точно, дорого).</li>
+<li>Идеальная стратегия зависит от стадии: MVP = rules, production = embeddings, high-stakes = LLM.</li>
+<li>Классификация сама стоит денег. Считай ROI: сколько тратишь на классификацию vs сколько экономишь на routing.</li>
+<li>Гибрид (rules + embeddings) часто лучше, чем один подход.</li>
+</ul>
+</div>
+
+
+<!-- ============================================================ -->
+<!-- CHAPTER 3: ROUTING PATTERNS                                   -->
+<!-- ============================================================ -->
+
+<h2 id="basic-routing">Глава 3: Routing-паттерны</h2>
+
+<p>Классификация определила, что запрос: medium/reasoning. Теперь нужно решить, какой модели его отправить. Это решение определяется routing-паттерном.</p>
+
+<h3>Базовый routing: конфиг-маппинг</h3>
+
+<p>Простейший вариант: YAML-файл, который маппит комбинации сложности и типа на конкретные модели.</p>
+
+<pre><code>routing:
+  simple:
+    factual: haiku-4.5
+    reasoning: haiku-4.5
+    creative: sonnet-4.6
+    code: haiku-4.5
+
+  medium:
+    factual: sonnet-4.6
+    reasoning: sonnet-4.6
+    creative: sonnet-4.6
+    code: sonnet-4.6
+
+  complex:
+    factual: sonnet-4.6
+    reasoning: opus-4.6
+    creative: opus-4.6
+    code: opus-4.6</code></pre>
+
+<p>Это работает и покрывает 80% потребностей. PM может менять конфиг без деплоя. Но есть паттерны, которые дают больше.</p>
+
+
+<h3 id="cascade">Cascade routing: попробуй дешевую, эскалируй если нужно</h3>
+
+<p>Идея: не выбирать модель заранее, а <strong>сначала отправить запрос дешевой модели</strong>. Если ее ответ "достаточно хорош", возвращаем его. Если нет, эскалируем на дорогую.</p>
+
+<div class="scenario">
+<div class="title">Как это выглядит</div>
+<ol>
+<li>Запрос уходит на Haiku. Haiku отвечает.</li>
+<li>Система оценивает ответ: confidence score, полнота, есть ли "не знаю".</li>
+<li>Если score &gt; threshold &rarr; возвращаем ответ Haiku. Стоимость: $0.001.</li>
+<li>Если score &lt; threshold &rarr; отправляем тот же запрос на Opus. Стоимость: $0.001 + $0.05.</li>
+</ol>
+</div>
+
+<h4>Как оценивать "достаточно хорош"</h4>
+<ul>
+<li><strong>Logprobs:</strong> если API возвращает вероятности токенов, низкая средняя вероятность = модель не уверена. Хорошо для factual, хуже для creative.</li>
+<li><strong>LLM-as-judge:</strong> маленькая модель оценивает ответ большой. Надежнее, но добавляет вызов.</li>
+<li><strong>Self-reported confidence:</strong> попросить модель оценить себя (1-10). Ненадежно для слабых моделей.</li>
+<li><strong>Heuristics:</strong> длина ответа, наличие "I'm not sure", структура.</li>
+</ul>
+
+<div class="box warn">
+<div class="label">Trade-off каскада</div>
+На эскалированных запросах ты платишь дважды (cheap + expensive + overhead оценки). Каскад выгоден, когда &gt;60% запросов разрешаются дешевой моделью. Если эскалация происходит в 50%+ случаев, обычный routing дешевле.
+</div>
+
+<p><strong>ETH Zurich paper (2024)</strong> доказывает: комбинация routing + cascading в единый фреймворк теоретически оптимальна по сравнению с каждой стратегией по отдельности.</p>
+
+
+<h3 id="confidence">Confidence-based routing: страховка от ошибок классификатора</h3>
+
+<p>Улучшение базового routing: классификатор выдает не только метку, но и <strong>confidence score</strong>. Routing учитывает оба:</p>
+
+<ul>
+<li>Confidence высокий (>0.85) &rarr; отправляем модели по конфигу</li>
+<li>Confidence низкий (<0.5) &rarr; safety net: отправляем на более мощную модель, чем по конфигу</li>
+<li>Confidence средний &rarr; зависит от cost tolerance</li>
+</ul>
+
+<p>Это простое улучшение, которое значительно снижает under-routing (сложные запросы на дешевую модель). Имплементируется за час поверх базового routing.</p>
+
+
+<h3 id="routellm">RouteLLM и другие решения</h3>
+
+<h4>RouteLLM (open-source, LMSYS)</h4>
+
+<p>Фреймворк от команды Chatbot Arena. <a href="https://github.com/lm-sys/RouteLLM" target="_blank">GitHub</a>, <a href="https://arxiv.org/abs/2406.18665" target="_blank">paper</a>.</p>
+
+<p>Отличие от нашего подхода: RouteLLM обучен на 80K+ реальных human preference comparisons из Arena. Не классифицирует запрос, а напрямую предсказывает, какой модели пользователь предпочтет ответ.</p>
+
+<p>Лучший результат: <strong>Matrix Factorization роутер</strong> достигает 95% качества GPT-4, отправляя на GPT-4 только 14% запросов. Остальные 86% идут на дешевую модель. Это 85% снижение cost на MT-Bench.</p>
+
+<p>Ограничение: роутит между ровно двумя моделями (strong vs weak). Для multi-model routing (3+ модели) нужна кастомизация.</p>
+
+<h4>Коммерческие решения</h4>
+<div class="table-wrap"><table>
+<tr><th>Решение</th><th>Подход</th><th>Особенность</th></tr>
+<tr><td><strong><a href="https://work.withmartian.com/" target="_blank">Martian</a></strong></td><td>Mechanistic interpretability: "маппит" трансформеры в программные представления</td><td>Предсказывает лучшую модель без inference. Claims: 98% cost savings.</td></tr>
+<tr><td><strong><a href="https://unify.ai" target="_blank">Unify.ai</a></strong></td><td>Neural network router + dynamic benchmarks (обновляются каждые 10 мин)</td><td>Единый API + custom router training на своих данных.</td></tr>
+<tr><td><strong><a href="https://www.notdiamond.ai/" target="_blank">Not Diamond</a></strong></td><td>Model router + prompt adaptation</td><td>Переписывает промпт под target-модель. Powered OpenRouter Auto.</td></tr>
+</table></div>
+
+
+<h3 id="routing-decision">Как выбрать паттерн: decision framework</h3>
+
+<div class="decision">
+<div class="title">Чек-лист выбора routing-паттерна</div>
+<ul>
+<li><strong>Первая версия, нужно быстро</strong> &rarr; Базовый конфиг-маппинг (YAML). Просто, прозрачно, PM-editable.</li>
+<li><strong>Хочу выжать больше экономии, большинство запросов простые</strong> &rarr; Cascade. Но только если &gt;60% запросов разрешаются cheap-моделью.</li>
+<li><strong>Классификатор иногда ошибается, хочу safety net</strong> &rarr; Confidence-based поверх базового routing. Малой кровью, большой эффект.</li>
+<li><strong>Есть human feedback data или готов собирать</strong> &rarr; RouteLLM. Обучается на реальных предпочтениях, не на правилах.</li>
+<li><strong>Не хочу строить сам, нужно в production быстро</strong> &rarr; Unify.ai или Martian как managed solution.</li>
+</ul>
+<p style="margin:0"><strong>Рекомендация для учебного проекта:</strong> начни с конфиг-маппинга, добавь confidence-based routing, сравни с RouteLLM. Каскад имплементируй последним как V2.</p>
+</div>
+
+<div class="takeaway">
+<div class="title">Выводы главы 3</div>
+<ul>
+<li>Конфиг-маппинг покрывает 80% потребностей и ставится за час.</li>
+<li>Каскад экономит больше, но добавляет latency и сложность. Выгоден при &gt;60% simple-запросов.</li>
+<li>Confidence-based routing: лучшее улучшение за минимальные усилия.</li>
+<li>RouteLLM (LMSYS): state-of-the-art open-source, 85% cost reduction при 95% качества.</li>
+<li>Cascade + routing гибрид теоретически оптимален (ETH Zurich, 2024).</li>
+</ul>
+</div>
+
+
+<!-- ============================================================ -->
+<!-- CHAPTER 4: RELIABILITY                                        -->
+<!-- ============================================================ -->
+
+<h2 id="fallback">Глава 4: Надежность</h2>
+
+<p>Routing добавляет зависимость от нескольких провайдеров. Каждый из них может упасть, затормозить, или вернуть ошибку. Если не подстраховаться, routing принесет больше проблем, чем решит.</p>
+
+<p>Три слоя защиты, от мелкого к крупному:</p>
+
+
+<h3>Слой 1: Fallback chains</h3>
+
+<p>Для каждой модели определяешь, кто подхватывает при отказе:</p>
+
+<pre><code># routing config
+complex:
+  primary: claude-opus-4.6
+  fallback:
+    - gpt-5.4           # same-tier: другой провайдер
+    - claude-sonnet-4.6  # downgrade: слабее, но работает
+  timeout_ms: 30000
+
+simple:
+  primary: claude-haiku-4.5
+  fallback:
+    - gpt-4.1-nano
+  timeout_ms: 5000</code></pre>
+
+<p>Четыре уровня деградации (в порядке приоритета):</p>
+<ol>
+<li><strong>Same-tier:</strong> Opus &rarr; GPT-5.4. Другой провайдер, аналогичное качество.</li>
+<li><strong>Downgrade:</strong> Opus &rarr; Sonnet. Слабее, но ответ будет.</li>
+<li><strong>Cached:</strong> если был похожий запрос недавно, вернуть кэшированный ответ.</li>
+<li><strong>Graceful failure:</strong> понятное сообщение пользователю, не stack trace.</li>
+</ol>
+
+<div class="box red">
+<div class="label">Принцип</div>
+Пользователь никогда не видит raw API error. Каждый failure обработан.
+</div>
+
+
+<h3 id="circuit-breaker">Слой 2: Circuit breaker</h3>
+
+<p>Проблема: если провайдер лёг на 10 минут, fallback chain будет каждый раз ждать timeout primary-модели (30 секунд) прежде чем переключиться. 10,000 запросов x 30 сек ожидания = пользователи уходят.</p>
+
+<p>Circuit breaker решает это. Паттерн из электротехники: когда downstream-сервис нездоров, "выбиваем автомат" и перестаем к нему обращаться.</p>
+
+<h4>Три состояния</h4>
+<div class="table-wrap"><table>
+<tr><th>Состояние</th><th>Что происходит</th><th>Когда переключается</th></tr>
+<tr><td><strong>Closed</strong> (норма)</td><td>Запросы идут к провайдеру. Считаем failures.</td><td>&rarr; Open, когда 5+ failures за 60 сек</td></tr>
+<tr><td><strong>Open</strong> (отключен)</td><td>Все запросы сразу на fallback. Провайдер не трогаем.</td><td>&rarr; Half-Open через 30 сек</td></tr>
+<tr><td><strong>Half-Open</strong> (тест)</td><td>Пропускаем 1 тестовый запрос к провайдеру.</td><td>&rarr; Closed если OK, &rarr; Open если fail</td></tr>
+</table></div>
+
+<pre><code>class CircuitBreaker:
+    def __init__(self, provider, threshold=5, timeout=30):
+        self.provider = provider
+        self.state = "closed"
+        self.failures = 0
+        self.threshold = threshold
+        self.timeout = timeout
+        self.opened_at = None
+
+    def call(self, prompt):
+        if self.state == "open":
+            if time.time() - self.opened_at > self.timeout:
+                self.state = "half_open"
+            else:
+                raise CircuitOpen(self.provider)
+
+        try:
+            result = self.provider.complete(prompt)
+            if self.state == "half_open":
+                self.state = "closed"
+                self.failures = 0
+            return result
+        except (Timeout, RateLimit, ServerError) as e:
+            self.failures += 1
+            self.opened_at = time.time()
+            if self.failures >= self.threshold:
+                self.state = "open"
+            raise</code></pre>
+
+<div class="box">
+<div class="label">Важно: breaker per provider</div>
+Отдельный circuit breaker для каждого провайдера. OpenAI лёг: breaker OpenAI = open, Anthropic = closed, запросы переключаются мгновенно. Различай transient (429, 503: считаются) и permanent (401, 400: не считаются) ошибки.
+</div>
+
+<p>Готовые библиотеки: <a href="https://github.com/danielfm/pybreaker" target="_blank">PyBreaker</a>, <a href="https://pypi.org/project/circuitbreaker/" target="_blank">circuitbreaker</a>.</p>
+
+
+<h3 id="retry">Слой 3: Retry с backoff и timeout management</h3>
+
+<p>Порядок действий при ошибке:</p>
+
+<ol>
+<li><strong>Retry с exponential backoff</strong> (1s, 2s, 4s). Тот же провайдер, max 2-3 попытки. Только для transient errors.</li>
+<li><strong>Fallback на другой провайдер:</strong> та же модель через другой endpoint (Anthropic &rarr; AWS Bedrock).</li>
+<li><strong>Fallback на другую модель:</strong> Opus &rarr; Sonnet &rarr; Haiku.</li>
+<li><strong>Circuit breaker:</strong> если провайдер стабильно падает, отключаем его на cooldown.</li>
+</ol>
+
+<h4>Timeout по классам моделей</h4>
+<div class="table-wrap"><table>
+<tr><th>Класс</th><th>Timeout</th><th>Почему</th></tr>
+<tr><td>Budget (Haiku, Nano)</td><td>5-10 сек</td><td>Если за 10 сек не ответила, что-то не так</td></tr>
+<tr><td>Mid-tier (Sonnet, GPT-4.1)</td><td>15-30 сек</td><td>Более сложные запросы, длиннее генерация</td></tr>
+<tr><td>Flagship (Opus, o3)</td><td>30-120 сек</td><td>Reasoning-модели объективно думают дольше</td></tr>
+</table></div>
+
+<p><strong>Streaming + heartbeat:</strong> при streaming, если нет новых токенов 5+ секунд, считай ответ "зависшим" и переключайся. Это ловит partial failures, которые обычный timeout пропускает.</p>
+
+<pre><code># Полная цепочка обработки ошибок
+Request -> Primary (timeout T)
+  -> Retry x2 с backoff (если transient error)
+    -> Same model, другой провайдер (timeout T/2)
+      -> Fallback model (timeout T)
+        -> Graceful error + cached response if available</code></pre>
+
+<div class="takeaway">
+<div class="title">Выводы главы 4</div>
+<ul>
+<li>Три слоя работают вместе: retry (blips) &rarr; fallback (Plan B) &rarr; circuit breaker (outage).</li>
+<li>Circuit breaker критичен: без него каждый запрос при outage ждет полный timeout.</li>
+<li>Breaker per provider, не глобально. Только transient ошибки считаются.</li>
+<li>Timeout разный для разных моделей: flagship объективно нужно больше времени.</li>
+<li>При streaming используй heartbeat detection (5 сек без токенов = stall).</li>
+</ul>
+</div>
+
+
+<!-- ============================================================ -->
+<!-- CHAPTER 5: OBSERVABILITY                                      -->
+<!-- ============================================================ -->
+
+<h2 id="why-observe">Глава 5: Измерение и observability</h2>
+
+<p>Routing внедрен, fallback работает. Но без observability ты не знаешь: экономит ли routing? Где классификатор ошибается? Деградирует ли качество?</p>
+
+<p>Без данных невозможно итерировать. А итерация: это то, что отличает "поставил routing" от "routing приносит результат".</p>
+
+
+<h3 id="metrics">Какие метрики трекать и зачем</h3>
+
+<p>Не все метрики одинаково важны. Вот приоритеты:</p>
+
+<h4>Tier 1: бизнес-метрики (показываешь на review)</h4>
+<div class="table-wrap"><table>
+<tr><th>Метрика</th><th>Что показывает</th><th>Как считать</th></tr>
+<tr><td><strong>Cost savings vs baseline</strong></td><td>Сколько сэкономили</td><td>Actual cost vs "все запросы через Sonnet" cost. Процент.</td></tr>
+<tr><td><strong>Quality delta</strong></td><td>Не деградировало ли качество</td><td>LLM-as-judge score (routed) vs score (single-model). Дельта &lt;5% = OK.</td></tr>
+<tr><td><strong>Monthly cost trend</strong></td><td>Куда идем</td><td>Burn rate: total_cost за 30 дней, тренд.</td></tr>
+</table></div>
+
+<h4>Tier 2: операционные (смотришь каждый день)</h4>
+<div class="table-wrap"><table>
+<tr><th>Метрика</th><th>Зачем</th><th>Alert threshold</th></tr>
+<tr><td><strong>Error rate per provider</strong></td><td>Здоровье провайдеров</td><td>&gt;2% за 5 мин</td></tr>
+<tr><td><strong>Fallback trigger rate</strong></td><td>Растет = primary деградирует</td><td>&gt;5% за час</td></tr>
+<tr><td><strong>Latency p50 / p95</strong></td><td>User experience</td><td>p95 &gt; 10s</td></tr>
+<tr><td><strong>Model distribution</strong></td><td>Drift от ожидаемого = classifier regression</td><td>Отклонение &gt;15% от baseline</td></tr>
+</table></div>
+
+<h4>Tier 3: аналитические (смотришь раз в неделю)</h4>
+<div class="table-wrap"><table>
+<tr><th>Метрика</th><th>Зачем</th><th>Как получить</th></tr>
+<tr><td><strong>Over-routing rate</strong></td><td>Simple на дорогую модель = wasted $</td><td>Eval set с ground truth labels</td></tr>
+<tr><td><strong>Under-routing rate</strong></td><td>Complex на дешевую = quality loss</td><td>Тот же eval set</td></tr>
+<tr><td><strong>Classifier confidence distribution</strong></td><td>Pile-up на low confidence = classifier не справляется</td><td>Histogram confidence scores</td></tr>
+<tr><td><strong>Cost per quality-adjusted request</strong></td><td>Реальная эффективность</td><td>cost / quality_score</td></tr>
+</table></div>
+
+
+<h4>Как оценивать качество в production</h4>
+<p>Три подхода (используй все три):</p>
+<ol>
+<li><strong>Heuristic checks (100% трафика):</strong> ответ не пустой? JSON парсится? Код компилируется? Нет отказа? Дешево, ловит грубые проблемы.</li>
+<li><strong>LLM-as-judge (5-10% sample):</strong> дешевая модель оценивает ответы по rubric (helpfulness, relevance, accuracy). Score 0-1. Alignment с human judgment: до 85%.</li>
+<li><strong>User feedback:</strong> thumbs up/down. Implicit: retry = плохо, copy = хорошо. Самые ценные данные, но мало и biased.</li>
+</ol>
+
+
+<h3 id="tools">Готовые инструменты</h3>
+
+<p>Прежде чем строить свое, стоит знать, что уже существует:</p>
+
+<div class="table-wrap"><table>
+<tr><th></th><th>LangSmith</th><th>Langfuse</th><th>Helicone</th></tr>
+<tr><td><strong>Что</strong></td><td>Observability от LangChain</td><td>Open-source LLM platform</td><td>LLM proxy с логированием</td></tr>
+<tr><td><strong>Лицензия</strong></td><td>Proprietary</td><td>MIT</td><td>Open source</td></tr>
+<tr><td><strong>Self-hosting</strong></td><td>Enterprise only</td><td>Full parity, бесплатно</td><td>Docker, одна команда</td></tr>
+<tr><td><strong>Как работает</strong></td><td>SDK instrumentation</td><td>SDK / OpenTelemetry</td><td>Proxy: меняешь base URL</td></tr>
+<tr><td><strong>LiteLLM</strong></td><td>Через wrapper</td><td>Native интеграция</td><td>Native (proxy)</td></tr>
+<tr><td><strong>Quality eval</strong></td><td>Best: judges, rubrics, annotation queues</td><td>LLM-as-judge, Ragas</td><td>Minimal</td></tr>
+<tr><td><strong>Free tier</strong></td><td>5K traces/мес</td><td>50K units/мес</td><td>10K req/мес</td></tr>
+<tr><td><strong>Best for</strong></td><td>LangChain stack, нужна полная платформа</td><td>Self-hosted, API-first</td><td>Zero-code, быстрый старт</td></tr>
+</table></div>
+
+<div class="decision">
+<div class="title">Что выбрать</div>
+<ul>
+<li><strong>Для учебного проекта:</strong> строим свою observability (SQLite + React). Главная ценность: понимаешь что и зачем логируешь.</li>
+<li><strong>Если потом нужно в production:</strong> Langfuse. Open source, self-hosted, native LiteLLM.</li>
+<li><strong>Если нужно за 5 минут:</strong> Helicone. Меняешь URL, всё работает.</li>
+</ul>
+</div>
+
+
+<h3 id="own-layer">Своя observability: что логировать</h3>
+
+<p>SQLite-схема, адаптированная для multi-model router:</p>
+
+<pre><code>CREATE TABLE requests (
+    id TEXT PRIMARY KEY,
+    timestamp_utc TEXT NOT NULL,
+
+    -- Что пришло
+    prompt TEXT NOT NULL,
+    prompt_tokens INTEGER,
+
+    -- Как классифицировали
+    complexity TEXT,                -- simple/medium/complex
+    category TEXT,                  -- factual/reasoning/creative/code
+    classifier_strategy TEXT,       -- rules/embeddings/llm_classifier
+    classifier_confidence REAL,     -- 0.0-1.0
+
+    -- Куда отправили
+    target_model TEXT NOT NULL,
+    fallback_used BOOLEAN DEFAULT 0,
+    fallback_model TEXT,
+
+    -- Что получили
+    response TEXT,
+    output_tokens INTEGER,
+    status TEXT DEFAULT 'success',  -- success/error/timeout/fallback
+    error_type TEXT,
+
+    -- Перформанс
+    classification_latency_ms INTEGER,
+    llm_latency_ms INTEGER,
+    total_latency_ms INTEGER,
+
+    -- Деньги
+    input_cost REAL,
+    output_cost REAL,
+    total_cost REAL,
+
+    -- Качество (заполняется асинхронно)
+    quality_score REAL,
+    user_feedback INTEGER           -- -1/0/1
+);</code></pre>
+
+<div class="box">
+<div class="label">Архитектура</div>
+<code>Python tracker (writes) &rarr; SQLite (WAL mode) &rarr; FastAPI (reads) &rarr; React + Recharts (dashboard)</code>
+<br><br>
+Tracker пишет в SQLite на каждом запросе (sync, &lt;1ms). FastAPI отдает JSON для дашборда. Для тяжелых агрегаций: materialized таблица <code>daily_stats</code> (обновляется cron-ом раз в час).
+<br><br>
+SQLite с WAL mode нормально работает до ~10M строк. Для учебного проекта: более чем достаточно.
+</div>
+
+<h4>Ключевые views дашборда</h4>
+<ol>
+<li><strong>KPI cards (top):</strong> total requests, total cost, cost savings %, avg latency, error rate</li>
+<li><strong>Cost breakdown by model</strong> (stacked bar, daily): видишь, куда уходят деньги</li>
+<li><strong>Model distribution</strong> (pie/donut): % запросов на каждую модель. Drift = проблема.</li>
+<li><strong>Latency p50/p95</strong> (line, per model): деградация видна сразу</li>
+<li><strong>Routing efficiency</strong> (comparison): actual cost vs single-model baseline</li>
+<li><strong>Request log</strong> (table): searchable, filterable, click to expand</li>
+</ol>
+
+<div class="takeaway">
+<div class="title">Выводы главы 5</div>
+<ul>
+<li>Без observability routing: черный ящик. Ты не знаешь, экономишь ли и не деградирует ли качество.</li>
+<li>Tier 1 метрика: cost savings vs baseline. Это то, что показываешь на review.</li>
+<li>Качество оценивай на трех уровнях: heuristics (100%), LLM-judge (5-10%), user feedback.</li>
+<li>Для учебного проекта: своя SQLite + FastAPI + React. Для production: Langfuse.</li>
+</ul>
+</div>
+
+
+<!-- ============================================================ -->
+<!-- THROUGH EXAMPLE                                               -->
+<!-- ============================================================ -->
+
+<h2 id="example">Сквозной пример: от проблемы до результата</h2>
+
+<p>Соберем все вместе. Один сценарий, который проходит через каждую главу.</p>
+
+<div class="scenario">
+<div class="title">Сценарий</div>
+<p style="margin-bottom:8px"><strong>Продукт:</strong> AI-ассистент для customer support в e-commerce. 8,000 запросов/день.</p>
+<p style="margin-bottom:8px"><strong>Текущее состояние:</strong> все через Claude Sonnet 4.6. Работает хорошо, но стоит $6,240/мес и растет.</p>
+<p style="margin:0"><strong>Задача:</strong> снизить расходы на 40%+, не потеряв качество.</p>
+</div>
+
+
+<h3>Шаг 1: Анализ запросов</h3>
+
+<p>Берем выборку из 500 запросов за последнюю неделю. Размечаем вручную (или с помощью LLM + spot-check):</p>
+
+<div class="table-wrap"><table>
+<tr><th>Категория</th><th>% запросов</th><th>Примеры</th></tr>
+<tr><td>Simple / factual</td><td class="num">45%</td><td>"Где мой заказ?", "Какие способы оплаты?", "Есть ли доставка в Ташкент?"</td></tr>
+<tr><td>Medium / reasoning</td><td class="num">35%</td><td>"Мне не подошел размер, что делать?", "Сравните два тарифа доставки"</td></tr>
+<tr><td>Complex / reasoning</td><td class="num">15%</td><td>"У меня 3 заказа, один вернули, второй потеряли, третий пришел не тот. Разберитесь."</td></tr>
+<tr><td>Creative</td><td class="num">5%</td><td>Персонализированные рекомендации, нестандартные запросы</td></tr>
+</table></div>
+
+<p><strong>Вывод:</strong> 45% запросов (простые, фактические) не требуют Sonnet. Еще 35% (medium) можно попробовать на дешевой модели с confidence-based escalation.</p>
+
+
+<h3>Шаг 2: Routing config</h3>
+
+<pre><code>routing:
+  simple:
+    factual: claude-haiku-4.5    # $1/$5
+    reasoning: claude-haiku-4.5
+    creative: claude-sonnet-4.6
+    code: claude-haiku-4.5
+
+  medium:
+    factual: claude-sonnet-4.6   # $3/$15
+    reasoning: claude-sonnet-4.6
+    creative: claude-sonnet-4.6
+    code: claude-sonnet-4.6
+
+  complex:
+    factual: claude-sonnet-4.6
+    reasoning: claude-opus-4.6   # $5/$25
+    creative: claude-opus-4.6
+    code: claude-opus-4.6
+
+fallback:
+  claude-opus-4.6: [gpt-5.4, claude-sonnet-4.6]
+  claude-sonnet-4.6: [gpt-4.1, claude-haiku-4.5]
+  claude-haiku-4.5: [gpt-4.1-nano]</code></pre>
+
+
+<h3>Шаг 3: Классификация</h3>
+
+<p>MVP: rule-based (длина + keywords). Accuracy ~70%. Через неделю, когда наберется 200+ размеченных запросов: embedding-based через Semantic Router. Accuracy ~85%.</p>
+
+
+<h3>Шаг 4: Считаем экономику</h3>
+
+<p>Средний запрос: 2,000 input + 800 output tokens.</p>
+
+<div class="table-wrap"><table>
+<tr><th></th><th>Модель</th><th>% запросов</th><th>Req/день</th><th>Cost/req</th><th>Cost/день</th></tr>
+<tr><td>Simple</td><td>Haiku 4.5</td><td class="num">45%</td><td class="num">3,600</td><td class="num">$0.006</td><td class="num">$21.60</td></tr>
+<tr><td>Medium</td><td>Sonnet 4.6</td><td class="num">35%</td><td class="num">2,800</td><td class="num">$0.018</td><td class="num">$50.40</td></tr>
+<tr><td>Complex</td><td>Opus 4.6</td><td class="num">15%</td><td class="num">1,200</td><td class="num">$0.030</td><td class="num">$36.00</td></tr>
+<tr><td>Creative</td><td>Sonnet 4.6</td><td class="num">5%</td><td class="num">400</td><td class="num">$0.018</td><td class="num">$7.20</td></tr>
+<tr><td colspan="4"></td><td><strong>Total/день</strong></td><td class="num"><strong>$115.20</strong></td></tr>
+<tr><td colspan="4"></td><td><strong>Total/мес</strong></td><td class="num"><strong>$3,456</strong></td></tr>
+</table></div>
+
+<div class="hero-row">
+<div class="hero-card">
+  <div class="label">Было (all Sonnet)</div>
+  <div class="hero-number">$6,240<span class="unit">/мес</span></div>
+</div>
+<div class="hero-card">
+  <div class="label">Стало (с routing)</div>
+  <div class="hero-number">$3,456<span class="unit">/мес</span></div>
+</div>
+<div class="hero-card">
+  <div class="label">Экономия</div>
+  <div class="hero-number" style="color: var(--green);">45%</div>
+  <div style="color: var(--text-dim); font-size: 13px;">$2,784/мес = $33,400/год</div>
+</div>
+</div>
+
+<p>И это без prompt caching (ещё -20-30% на input) и без batch API. С ними реалистично дойти до 60%+ экономии.</p>
+
+
+<h3>Шаг 5: Что на дашборде</h3>
+
+<p>Через неделю работы router показывает на дашборде:</p>
+<ul>
+<li><strong>Model distribution:</strong> Haiku 45%, Sonnet 40%, Opus 15%. Совпадает с ожиданием.</li>
+<li><strong>Cost savings:</strong> 44% vs all-Sonnet baseline.</li>
+<li><strong>Quality (LLM-judge, 10% sample):</strong> 0.87 routed vs 0.89 all-Sonnet. Delta 2.2%. Приемлемо.</li>
+<li><strong>Fallback rate:</strong> 0.3%. Здоровая система.</li>
+<li><strong>Classifier confidence:</strong> 82% запросов с confidence &gt;0.8. 6% с confidence &lt;0.5 (зона для улучшения).</li>
+</ul>
+
+<p><strong>Action item:</strong> 6% запросов с low confidence. Посмотреть, что это за запросы, добавить примеры в embedding set, пересчитать accuracy.</p>
+
+
+<!-- ============================================================ -->
+<!-- SUMMARY                                                       -->
+<!-- ============================================================ -->
+
+<h2 id="summary">Итог: что ты теперь знаешь и что делать дальше</h2>
+
+<h3>Карта знаний</h3>
+
+<div class="table-wrap"><table>
+<tr><th>Тема</th><th>Ключевой insight</th></tr>
+<tr><td><strong>Экономика</strong></td><td>Разброс цен между моделями до 125x. 70-80% запросов не требуют flagship. Routing дает 40-70% экономии.</td></tr>
+<tr><td><strong>Классификация</strong></td><td>Три подхода (rules &rarr; embeddings &rarr; LLM), выбор зависит от стадии. Классификация сама стоит денег: считай ROI.</td></tr>
+<tr><td><strong>Routing</strong></td><td>Конфиг-маппинг = 80% результата. Confidence-based = лучшее улучшение за минимум усилий. Cascade + routing = теоретический оптимум.</td></tr>
+<tr><td><strong>Надежность</strong></td><td>Три слоя: retry &rarr; fallback &rarr; circuit breaker. Breaker per provider. Tiered timeouts.</td></tr>
+<tr><td><strong>Observability</strong></td><td>Главная метрика: cost savings vs baseline. Качество: heuristics (100%) + LLM-judge (5-10%) + feedback.</td></tr>
+</table></div>
+
+<h3>Чек-лист: порядок действий</h3>
+
+<div class="decision">
+<div class="title">Последовательность реализации</div>
+<ol style="margin-bottom:0">
+<li><strong>Собери eval dataset</strong> (100+ запросов с ground truth метками). Без этого нельзя ни измерить accuracy классификатора, ни сравнить качество routing.</li>
+<li><strong>Имплементируй rule-based classifier</strong> как baseline. Замерь accuracy на eval set.</li>
+<li><strong>Сделай конфиг-маппинг routing</strong> (YAML). Подключи LiteLLM.</li>
+<li><strong>Добавь tracker</strong> (SQLite). Логируй каждый запрос: модель, токены, стоимость, latency.</li>
+<li><strong>Добавь fallback chains + circuit breaker.</strong></li>
+<li><strong>Замени rule-based на embedding-based classifier.</strong> Сравни accuracy.</li>
+<li><strong>Добавь confidence-based routing.</strong></li>
+<li><strong>Построй dashboard.</strong> Покажи cost savings vs baseline.</li>
+<li><strong>Добавь LLM-as-classifier как третью стратегию.</strong> Сравни все три.</li>
+<li><strong>Оптимизируй:</strong> prompt caching, batch eval, cascade routing.</li>
+</ol>
+</div>
+
+
+<!-- ============================================================ -->
+<!-- RESOURCES                                                     -->
+<!-- ============================================================ -->
+
+<h2 id="resources">Ресурсы для углубления</h2>
+
+<h3>Papers</h3>
+<ul>
+<li><a href="https://arxiv.org/abs/2406.18665" target="_blank">RouteLLM: Learning to Route LLMs</a> (LMSYS, 2024). Главный paper по теме. Четыре реализации роутера, 85% cost reduction.</li>
+<li><a href="https://arxiv.org/abs/2410.10347" target="_blank">Unified Cascade-Routing</a> (ETH Zurich, 2024). Доказательство оптимальности гибрида cascade + routing.</li>
+<li><a href="https://arxiv.org/html/2502.00409v1" target="_blank">"Doing More with Less"</a> (Feb 2025). Наиболее полный survey по LLM routing.</li>
+<li><a href="https://arxiv.org/html/2601.06220v1" target="_blank">ZeroRouter</a> (Jan 2025). Model-agnostic routing без model-specific данных.</li>
+</ul>
+
+<h3>Open-source инструменты</h3>
+<ul>
+<li><a href="https://github.com/lm-sys/RouteLLM" target="_blank">RouteLLM</a>: framework для learned routing (LMSYS)</li>
+<li><a href="https://github.com/aurelio-labs/semantic-router" target="_blank">Semantic Router</a>: embedding-based routing (MIT)</li>
+<li><a href="https://github.com/microsoft/best-route-llm" target="_blank">BEST-Route</a>: adaptive model + sample selection (Microsoft)</li>
+<li><a href="https://github.com/danielfm/pybreaker" target="_blank">PyBreaker</a>: circuit breaker для Python</li>
+<li><a href="https://langfuse.com" target="_blank">Langfuse</a>: open-source LLM observability</li>
+<li><a href="https://github.com/Helicone/helicone" target="_blank">Helicone</a>: LLM proxy с observability</li>
+</ul>
+
+<h3>Коммерческие платформы</h3>
+<ul>
+<li><a href="https://work.withmartian.com/" target="_blank">Martian</a>: routing через mechanistic interpretability</li>
+<li><a href="https://unify.ai" target="_blank">Unify.ai</a>: LLM optimization + dynamic benchmarks</li>
+<li><a href="https://www.notdiamond.ai/" target="_blank">Not Diamond</a>: routing + prompt adaptation</li>
+</ul>
+
+<h3>Бенчмарки и цены</h3>
+<ul>
+<li><a href="https://lmarena.ai/" target="_blank">LMSYS Chatbot Arena</a>: crowdsourced model ranking</li>
+<li><a href="https://artificialanalysis.ai/leaderboards/models" target="_blank">Artificial Analysis: LLM Leaderboard</a></li>
+<li>Pricing: <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank">Anthropic</a> | <a href="https://openai.com/api/pricing/" target="_blank">OpenAI</a> | <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank">Google</a></li>
+</ul>
+
+<h3>Guides</h3>
+<ul>
+<li><a href="https://portkey.ai/blog/retries-fallbacks-and-circuit-breakers-in-llm-apps/" target="_blank">Portkey: Retries, Fallbacks, Circuit Breakers</a></li>
+<li><a href="https://blog.logrocket.com/llm-routing-right-model-for-requests/" target="_blank">LogRocket: LLM Routing in Production</a></li>
+<li><a href="https://aws.amazon.com/blogs/machine-learning/multi-llm-routing-strategies-for-generative-ai-applications-on-aws/" target="_blank">AWS: Multi-LLM Routing Strategies</a></li>
+</ul>
+
+
+</main>
+
+<script>
+const sections = document.querySelectorAll('h2[id], h3[id]');
+const navLinks = document.querySelectorAll('nav a');
+function updateActive() {
+  let current = '';
+  sections.forEach(s => {
+    if (window.scrollY >= s.offsetTop - 100) current = s.id;
+  });
+  navLinks.forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+  });
+}
+window.addEventListener('scroll', updateActive, { passive: true });
+updateActive();
+navLinks.forEach(a => a.addEventListener('click', () => {
+  document.querySelector('nav').classList.remove('open');
+}));
+</script>
+
+</body>
+</html>
