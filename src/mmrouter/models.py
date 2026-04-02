@@ -60,6 +60,16 @@ class RequestLog(BaseModel):
         return hashlib.sha256(prompt.encode()).hexdigest()[:16]
 
 
+class AdaptiveConfig(BaseModel):
+    """Configuration for feedback-driven adaptive routing."""
+
+    enabled: bool = False
+    min_feedback_count: int = 20
+    decay_days: int = 30
+    penalty_threshold: float = 0.4
+    boost_threshold: float = 0.8
+
+
 class BudgetConfig(BaseModel):
     """Configuration for daily budget limits with automatic model downgrade."""
 
@@ -122,6 +132,7 @@ class RoutingConfig(BaseModel):
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
     cascade: CascadeConfig = Field(default_factory=CascadeConfig)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
+    adaptive: AdaptiveConfig = Field(default_factory=AdaptiveConfig)
 
     def get_route(self, complexity: Complexity, category: Category) -> ModelRoute | None:
         complexity_routes = self.routes.get(complexity.value)

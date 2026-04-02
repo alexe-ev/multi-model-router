@@ -23,6 +23,8 @@ from mmrouter.server.models import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,
+    FeedbackRequest,
+    FeedbackResponse,
     ModelInfo,
     ModelListResponse,
     UsageInfo,
@@ -145,7 +147,11 @@ def create_app(
                     "X-MMRouter-Fallback": str(result.fallback_used).lower(),
                     "X-MMRouter-Escalated": str(result.escalated).lower(),
                     "X-MMRouter-Budget-Downgraded": str(result.budget_downgraded).lower(),
+                    "X-MMRouter-Adaptive-Reranked": str(result.adaptive_reranked).lower(),
                 }
+
+                if result.request_id is not None:
+                    headers["X-MMRouter-Request-Id"] = str(result.request_id)
 
                 if result.completion.cache_read_tokens > 0:
                     headers["X-MMRouter-Cache-Read-Tokens"] = str(result.completion.cache_read_tokens)
@@ -265,5 +271,14 @@ def create_app(
                 **extra_headers,
             },
         )
+
+    @app.post("/v1/feedback", dependencies=[Depends(verify_api_key)])
+    async def submit_feedback(body: FeedbackRequest, request: Request):
+        router = _get_router(request)
+        try:
+            router.submit_feedback(body.request_id, body.rating)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        return FeedbackResponse(request_id=body.request_id)
 
     return app
