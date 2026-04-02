@@ -97,6 +97,7 @@ class ClassifierConfig(BaseModel):
     strategy: str = "rules"
     model: str | None = None
     threshold: float = 0.7
+    trained_model: str | None = None
 
 
 class ProviderConfig(BaseModel):
