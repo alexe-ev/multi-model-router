@@ -37,6 +37,12 @@ class CompletionResult(BaseModel):
     latency_ms: float
 
 
+class StreamChunk(BaseModel):
+    content: str
+    model: str
+    finish_reason: str | None = None
+
+
 class RequestLog(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     prompt_hash: str = ""
