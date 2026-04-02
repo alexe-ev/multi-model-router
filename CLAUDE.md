@@ -54,6 +54,27 @@ mmrouter stats                      # Show cost/routing summary
 - Prompts logged to SQLite but never to stdout/stderr in production.
 - Circuit breaker is per-provider, not global.
 
+## Docs
+
+- `.claude/docs/architecture.md` - component diagram, data flow, key abstractions
+
+## Workflow
+
+Tasks tracked in Linear (initiative: Multi-Model Router, projects P0-P7).
+
+**Commands are in `.claude/commands/`:**
+- `/plan <args>` : technical analysis, task document, save to Linear
+- `/ship <args>` : branch, executor agent, QA/review/security agents, commit, PR
+
+**Flow:**
+1. Plan chunk scope (which tasks, which Linear issues)
+2. `/ship KN-XXX` for each task (reads from Linear, full agent pipeline)
+3. After chunk: update Linear + memory + PLAN.md + findings
+
+If `/plan` and `/ship` can't be invoked as skills, read `.claude/commands/plan.md` and `.claude/commands/ship.md` and follow the steps manually.
+
+**When to skip /ship:** quick simple fixes (typos, one-liner patches, config tweaks). Everything else goes through /ship.
+
 ## Hard rules
 
 - Never commit API keys, tokens, or secrets
@@ -61,15 +82,4 @@ mmrouter stats                      # Show cost/routing summary
 - Never hardcode model names in routing logic (use YAML config)
 - Never log API keys or full prompts to stdout
 - All LLM calls go through the Router, never direct provider calls from outside `router/`
-
-## Docs
-
-- `.claude/docs/architecture.md` - component diagram, data flow, key abstractions
-
-## Workflow
-
-- Tasks tracked in Linear (initiative: Multi-Model Router, projects P0-P7)
-- Branch per task: `feature/{linear-id}` or `feature/{slug}`
-- Work in chunks: describe multiple tasks, execute sequentially or in parallel
-- Agents: executor -> qa + code-reviewer + security-auditor (parallel) -> commit + PR
-- `/plan` to create task, `/ship` to implement
+- Never write implementation code outside of /ship workflow (except quick simple fixes)
