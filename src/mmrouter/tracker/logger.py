@@ -22,15 +22,23 @@ CREATE TABLE IF NOT EXISTS requests (
     tokens_out INTEGER NOT NULL,
     cost REAL NOT NULL,
     latency_ms REAL NOT NULL,
-    fallback_used INTEGER NOT NULL DEFAULT 0
+    fallback_used INTEGER NOT NULL DEFAULT 0,
+    cascade_used INTEGER NOT NULL DEFAULT 0,
+    cascade_attempts INTEGER NOT NULL DEFAULT 1
 )
 """
+
+_MIGRATIONS = [
+    "ALTER TABLE requests ADD COLUMN cascade_used INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE requests ADD COLUMN cascade_attempts INTEGER NOT NULL DEFAULT 1",
+]
 
 _INSERT = """
 INSERT INTO requests (
     timestamp, prompt_hash, complexity, category, confidence,
-    model, tokens_in, tokens_out, cost, latency_ms, fallback_used
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    model, tokens_in, tokens_out, cost, latency_ms, fallback_used,
+    cascade_used, cascade_attempts
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -43,7 +51,18 @@ class Tracker:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(_CREATE_TABLE)
+        self._run_migrations()
         self._conn.commit()
+
+    def _run_migrations(self) -> None:
+        """Add columns that may be missing from older databases."""
+        cur = self._conn.execute("PRAGMA table_info(requests)")
+        existing_columns = {row[1] for row in cur.fetchall()}
+        for stmt in _MIGRATIONS:
+            # Extract column name from ALTER TABLE ... ADD COLUMN <name> ...
+            col_name = stmt.split("ADD COLUMN")[1].strip().split()[0]
+            if col_name not in existing_columns:
+                self._conn.execute(stmt)
 
     def log(self, entry: RequestLog) -> None:
         self._conn.execute(_INSERT, (
@@ -58,6 +77,8 @@ class Tracker:
             entry.completion.cost,
             entry.completion.latency_ms,
             int(entry.fallback_used),
+            int(entry.cascade_used),
+            entry.cascade_attempts,
         ))
         self._conn.commit()
 

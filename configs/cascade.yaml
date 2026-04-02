@@ -28,13 +28,25 @@ routes:
       model: claude-sonnet-4-6
       fallbacks:
         - claude-opus-4-6
+      cascade:
+        - claude-haiku-4-5-20251001
+        - claude-sonnet-4-6
+        - claude-opus-4-6
     creative:
       model: claude-sonnet-4-6
       fallbacks:
         - claude-opus-4-6
+      cascade:
+        - claude-haiku-4-5-20251001
+        - claude-sonnet-4-6
+        - claude-opus-4-6
     code:
       model: claude-sonnet-4-6
       fallbacks:
+        - claude-opus-4-6
+      cascade:
+        - claude-haiku-4-5-20251001
+        - claude-sonnet-4-6
         - claude-opus-4-6
 
   complex:
@@ -42,18 +54,31 @@ routes:
       model: claude-sonnet-4-6
       fallbacks:
         - claude-opus-4-6
+      cascade:
+        - claude-sonnet-4-6
+        - claude-opus-4-6
     reasoning:
       model: claude-opus-4-6
       fallbacks:
         - claude-sonnet-4-6
+      cascade:
+        - claude-haiku-4-5-20251001
+        - claude-sonnet-4-6
+        - claude-opus-4-6
     creative:
       model: claude-opus-4-6
       fallbacks:
         - claude-sonnet-4-6
+      cascade:
+        - claude-sonnet-4-6
+        - claude-opus-4-6
     code:
       model: claude-opus-4-6
       fallbacks:
         - claude-sonnet-4-6
+      cascade:
+        - claude-sonnet-4-6
+        - claude-opus-4-6
 
 classifier:
   strategy: rules
@@ -66,6 +91,12 @@ provider:
   circuit_breaker_reset_ms: 60000
 
 cascade:
-  enabled: false
+  enabled: true
   strategy: heuristic
   min_response_length: 50
+  hedging_phrases:
+    - "I'm not sure"
+    - "I don't know"
+    - "I cannot"
+    - "I'm unable"
+    - "I don't have enough information"

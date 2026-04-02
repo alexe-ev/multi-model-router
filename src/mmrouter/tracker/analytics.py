@@ -113,3 +113,34 @@ class CostAnalytics:
             "by_complexity": by_complexity,
             "by_category": by_category,
         }
+
+    def cascade_savings(self) -> dict:
+        """Compare actual cost of cascade requests vs what the originally-classified model would have cost."""
+        cur = self._conn.execute(
+            "SELECT cascade_used, cascade_attempts, cost, tokens_in, tokens_out, model "
+            "FROM requests WHERE cascade_used = 1"
+        )
+        rows = cur.fetchall()
+
+        if not rows:
+            return {
+                "cascade_requests": 0,
+                "cascade_actual_cost": 0.0,
+                "cascade_attempts_total": 0,
+                "avg_attempts": 0.0,
+            }
+
+        total_cost = 0.0
+        total_attempts = 0
+        count = len(rows)
+
+        for row in rows:
+            total_cost += row[2]
+            total_attempts += row[1]
+
+        return {
+            "cascade_requests": count,
+            "cascade_actual_cost": round(total_cost, 6),
+            "cascade_attempts_total": total_attempts,
+            "avg_attempts": round(total_attempts / count, 2) if count > 0 else 0.0,
+        }
