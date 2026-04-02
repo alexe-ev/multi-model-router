@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 
 try:
@@ -34,6 +36,7 @@ class EmbeddingClassifier(ClassifierBase):
         k: int = 5,
     ) -> None:
         self.k = k
+        self._model_name = model_name
         self._model = SentenceTransformer(model_name)
 
         path = Path(examples_path) if examples_path is not None else _DEFAULT_EXAMPLES_PATH
@@ -62,6 +65,70 @@ class EmbeddingClassifier(ClassifierBase):
         norms = np.linalg.norm(raw_embeddings, axis=1, keepdims=True)
         norms = np.where(norms == 0, 1.0, norms)
         self._embeddings: np.ndarray = raw_embeddings / norms  # shape: (N, D)
+
+    def save(self, path: str | Path) -> Path:
+        """Save pre-computed embeddings (.npz) and metadata (.json) to directory.
+
+        Returns the directory path where files were saved.
+        """
+        out_dir = Path(path)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        np.savez_compressed(out_dir / "embeddings.npz", embeddings=self._embeddings)
+
+        metadata = {
+            "model_name": self._model_name,
+            "k": self.k,
+            "num_examples": len(self._prompts),
+            "timestamp": time.time(),
+            "prompts": self._prompts,
+            "complexities": [c.value for c in self._complexities],
+            "categories": [c.value for c in self._categories],
+        }
+        with open(out_dir / "metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        return out_dir
+
+    @classmethod
+    def load(cls, path: str | Path) -> "EmbeddingClassifier":
+        """Load a pre-trained classifier from saved embeddings directory.
+
+        Skips YAML parsing and re-encoding. Only loads the sentence-transformers
+        model for inference.
+        """
+        load_dir = Path(path)
+        meta_path = load_dir / "metadata.json"
+        emb_path = load_dir / "embeddings.npz"
+
+        if not meta_path.exists():
+            raise FileNotFoundError(f"Metadata file not found: {meta_path}")
+        if not emb_path.exists():
+            raise FileNotFoundError(f"Embeddings file not found: {emb_path}")
+
+        with open(meta_path) as f:
+            metadata = json.load(f)
+
+        model_name = metadata["model_name"]
+        k = metadata.get("k", 5)
+        prompts = metadata["prompts"]
+        complexities = [Complexity(c) for c in metadata["complexities"]]
+        categories = [Category(c) for c in metadata["categories"]]
+
+        data = np.load(emb_path)
+        embeddings = data["embeddings"]
+
+        # Build instance without calling __init__ (skip YAML + encoding)
+        instance = object.__new__(cls)
+        instance.k = k
+        instance._model_name = model_name
+        instance._model = SentenceTransformer(model_name)
+        instance._prompts = prompts
+        instance._complexities = complexities
+        instance._categories = categories
+        instance._embeddings = embeddings
+
+        return instance
 
     def classify(self, prompt: str) -> ClassificationResult:
         prompt = prompt.strip()
