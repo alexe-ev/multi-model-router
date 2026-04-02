@@ -21,6 +21,7 @@ from mmrouter.models import (
 )
 from mmrouter.providers.base import ProviderBase, _extract_last_user_message
 from mmrouter.providers.litellm_provider import LiteLLMProvider, ProviderError
+from mmrouter.router.budget import BudgetExceededError, BudgetManager
 from mmrouter.router.cascade import QualityGateResult, create_quality_gate
 from mmrouter.router.config import load_config
 from mmrouter.router.fallback import CircuitBreakerRegistry, CircuitOpenError
@@ -41,6 +42,7 @@ class RoutingResult(BaseModel):
     escalated: bool = False
     cascade_used: bool = False
     cascade_attempts: int = 1
+    budget_downgraded: bool = False
 
 
 class Router:
@@ -60,6 +62,7 @@ class Router:
         self._provider = provider or LiteLLMProvider(self._config.provider)
         self._tracker = tracker or Tracker(db_path)
         self._breakers = CircuitBreakerRegistry(self._config.provider)
+        self._budget = BudgetManager(self._config.budget, self._tracker.connection)
 
     def _get_cascade_chain(self, route: ModelRoute) -> list[str]:
         """Get cascade chain for a route: per-route if defined, else all unique models cheap-first."""
@@ -164,6 +167,14 @@ class Router:
                 escalated = True
                 complexity = new_complexity
 
+        # Budget enforcement: may downgrade complexity or reject
+        budget_downgraded = False
+        if self._budget.enabled:
+            new_complexity = self._budget.apply_budget(complexity)
+            if new_complexity != complexity:
+                budget_downgraded = True
+                complexity = new_complexity
+
         route = self._config.get_route(complexity, classification.category)
         if not route:
             raise ValueError(
@@ -172,7 +183,9 @@ class Router:
 
         # Cascade routing path
         if self._config.cascade.enabled:
-            return self._route_cascade(prompt, classification, route, escalated)
+            result = self._route_cascade(prompt, classification, route, escalated)
+            result.budget_downgraded = budget_downgraded
+            return result
 
         # Standard routing path (unchanged)
         models_to_try = [route.model] + route.fallbacks
@@ -199,6 +212,7 @@ class Router:
                     model_used=model,
                     fallback_used=fallback_used,
                     escalated=escalated,
+                    budget_downgraded=budget_downgraded,
                 )
 
                 self._tracker.log(RequestLog(
@@ -233,6 +247,14 @@ class Router:
                 escalated = True
                 complexity = new_complexity
 
+        # Budget enforcement
+        budget_downgraded = False
+        if self._budget.enabled:
+            new_complexity = self._budget.apply_budget(complexity)
+            if new_complexity != complexity:
+                budget_downgraded = True
+                complexity = new_complexity
+
         route = self._config.get_route(complexity, classification.category)
         if not route:
             raise ValueError(
@@ -264,6 +286,7 @@ class Router:
                     model_used=model,
                     fallback_used=fallback_used,
                     escalated=escalated,
+                    budget_downgraded=budget_downgraded,
                 )
 
                 self._tracker.log(RequestLog(
@@ -287,8 +310,8 @@ class Router:
 
     def route_messages_stream(
         self, messages: list[dict], **kwargs
-    ) -> tuple[ClassificationResult, str, bool, bool, Iterator[StreamChunk]]:
-        """Stream version: returns (classification, model_name, fallback_used, escalated, chunk_iterator).
+    ) -> tuple[ClassificationResult, str, bool, bool, bool, Iterator[StreamChunk]]:
+        """Stream version: returns (classification, model_name, fallback_used, escalated, budget_downgraded, chunk_iterator).
 
         Classification and model selection happen immediately.
         The actual LLM call is lazy via the iterator.
@@ -302,6 +325,14 @@ class Router:
             new_complexity = _ESCALATION_MAP[complexity]
             if new_complexity != complexity:
                 escalated = True
+                complexity = new_complexity
+
+        # Budget enforcement
+        budget_downgraded = False
+        if self._budget.enabled:
+            new_complexity = self._budget.apply_budget(complexity)
+            if new_complexity != complexity:
+                budget_downgraded = True
                 complexity = new_complexity
 
         route = self._config.get_route(complexity, classification.category)
@@ -323,7 +354,7 @@ class Router:
 
             fallback_used = i > 0
             chunks = self._provider.stream_messages(messages, model, **kwargs)
-            return classification, model, fallback_used, escalated, chunks
+            return classification, model, fallback_used, escalated, budget_downgraded, chunks
 
         raise RuntimeError(
             f"All models failed for {classification.complexity}/{classification.category}. "
@@ -339,6 +370,10 @@ class Router:
 
     def get_stats(self) -> dict:
         return self._tracker.get_stats()
+
+    def get_budget_status(self) -> dict:
+        """Return current budget status."""
+        return self._budget.get_status()
 
     def close(self) -> None:
         self._tracker.close()

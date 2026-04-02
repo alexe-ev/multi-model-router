@@ -204,7 +204,7 @@ class TestRouteMessagesStream:
         )
 
         messages = [{"role": "user", "content": "What is 2+2?"}]
-        classification, model, fallback_used, escalated, chunks = (
+        classification, model, fallback_used, escalated, budget_downgraded, chunks = (
             router.route_messages_stream(messages)
         )
 
@@ -231,7 +231,7 @@ class TestRouteMessagesStream:
         )
 
         messages = [{"role": "user", "content": "test"}]
-        classification, model, fallback_used, escalated, chunks = (
+        classification, model, fallback_used, escalated, budget_downgraded, chunks = (
             router.route_messages_stream(messages)
         )
 
@@ -255,7 +255,7 @@ class TestRouteMessagesStream:
         messages = [{"role": "user", "content": "What is 2+2?"}]
         # route_messages_stream returns immediately (generator is lazy).
         # The model selected is haiku (first in list), but error surfaces during iteration.
-        classification, model, fallback_used, escalated, chunks = (
+        classification, model, fallback_used, escalated, budget_downgraded, chunks = (
             router.route_messages_stream(messages)
         )
         assert "haiku" in model.lower()
