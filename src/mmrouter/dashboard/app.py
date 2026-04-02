@@ -3,7 +3,7 @@ import sqlite3
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from mmrouter.tracker.logger import Tracker, _CREATE_TABLE
+from mmrouter.tracker.logger import Tracker, _CREATE_TABLE, _CREATE_FEEDBACK_TABLE
 from mmrouter.tracker.analytics import CostAnalytics
 
 
@@ -12,6 +12,7 @@ def _open_conn(db_path: str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(_CREATE_TABLE)
+    conn.execute(_CREATE_FEEDBACK_TABLE)
     conn.commit()
     return conn
 
@@ -93,6 +94,10 @@ def create_app(db_path: str = "mmrouter.db") -> FastAPI:
         items = [dict(row) for row in rows]
 
         return {"total": total, "items": items, "limit": limit, "offset": offset}
+
+    @app.get("/api/stats/feedback")
+    def get_feedback_stats():
+        return tracker.get_feedback_stats()
 
     @app.get("/api/models")
     def get_models():

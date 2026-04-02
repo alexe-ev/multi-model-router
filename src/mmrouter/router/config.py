@@ -7,6 +7,7 @@ from pathlib import Path
 import strictyaml as sy
 
 from mmrouter.models import (
+    AdaptiveConfig,
     BudgetConfig,
     CascadeConfig,
     Category,
@@ -66,6 +67,14 @@ _budget_schema = sy.Map({
     sy.Optional("hard_limit_action"): sy.Str(),
 })
 
+_adaptive_schema = sy.Map({
+    sy.Optional("enabled"): sy.Bool(),
+    sy.Optional("min_feedback_count"): sy.Int(),
+    sy.Optional("decay_days"): sy.Int(),
+    sy.Optional("penalty_threshold"): sy.Float(),
+    sy.Optional("boost_threshold"): sy.Float(),
+})
+
 _config_schema = sy.Map({
     sy.Optional("version"): sy.Str(),
     "routes": _routes_schema,
@@ -73,6 +82,7 @@ _config_schema = sy.Map({
     sy.Optional("provider"): _provider_schema,
     sy.Optional("cascade"): _cascade_schema,
     sy.Optional("budget"): _budget_schema,
+    sy.Optional("adaptive"): _adaptive_schema,
 })
 
 
@@ -169,6 +179,22 @@ def load_config(path: str | Path) -> RoutingConfig:
             budget_kwargs["hard_limit_action"] = action
         budget = BudgetConfig(**budget_kwargs)
 
+    adaptive = AdaptiveConfig()
+    if "adaptive" in data and data["adaptive"]:
+        adp_data = data["adaptive"]
+        adaptive_kwargs = {}
+        if "enabled" in adp_data:
+            adaptive_kwargs["enabled"] = adp_data["enabled"]
+        if "min_feedback_count" in adp_data:
+            adaptive_kwargs["min_feedback_count"] = adp_data["min_feedback_count"]
+        if "decay_days" in adp_data:
+            adaptive_kwargs["decay_days"] = adp_data["decay_days"]
+        if "penalty_threshold" in adp_data:
+            adaptive_kwargs["penalty_threshold"] = float(adp_data["penalty_threshold"])
+        if "boost_threshold" in adp_data:
+            adaptive_kwargs["boost_threshold"] = float(adp_data["boost_threshold"])
+        adaptive = AdaptiveConfig(**adaptive_kwargs)
+
     return RoutingConfig(
         version=data.get("version", "1"),
         routes=routes,
@@ -176,4 +202,5 @@ def load_config(path: str | Path) -> RoutingConfig:
         provider=provider,
         cascade=cascade,
         budget=budget,
+        adaptive=adaptive,
     )

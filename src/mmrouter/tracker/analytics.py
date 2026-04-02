@@ -148,6 +148,60 @@ class CostAnalytics:
             "cache_hit_rate": round(hit_rate, 2),
         }
 
+    def feedback_stats(self) -> dict:
+        """Feedback analytics: success rates per model, per bucket."""
+        # Check if feedback table exists
+        cur = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='feedback'"
+        )
+        if not cur.fetchone():
+            return {"total_feedback": 0, "by_model": {}, "by_bucket": {}}
+
+        total = self._conn.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
+
+        model_cur = self._conn.execute("""
+            SELECT r.model,
+                   COUNT(*) as total,
+                   SUM(CASE WHEN f.rating = 1 THEN 1 ELSE 0 END) as positive
+            FROM feedback f
+            JOIN requests r ON f.request_id = r.id
+            GROUP BY r.model
+        """)
+        by_model = {}
+        for row in model_cur.fetchall():
+            model, cnt, pos = row[0], row[1], row[2]
+            by_model[model] = {
+                "total": cnt,
+                "positive": pos,
+                "negative": cnt - pos,
+                "success_rate": round(pos / cnt, 4) if cnt > 0 else 0.0,
+            }
+
+        bucket_cur = self._conn.execute("""
+            SELECT r.complexity, r.category,
+                   COUNT(*) as total,
+                   SUM(CASE WHEN f.rating = 1 THEN 1 ELSE 0 END) as positive
+            FROM feedback f
+            JOIN requests r ON f.request_id = r.id
+            GROUP BY r.complexity, r.category
+        """)
+        by_bucket = {}
+        for row in bucket_cur.fetchall():
+            key = f"{row[0]}/{row[1]}"
+            cnt, pos = row[2], row[3]
+            by_bucket[key] = {
+                "total": cnt,
+                "positive": pos,
+                "negative": cnt - pos,
+                "success_rate": round(pos / cnt, 4) if cnt > 0 else 0.0,
+            }
+
+        return {
+            "total_feedback": total,
+            "by_model": by_model,
+            "by_bucket": by_bucket,
+        }
+
     def cascade_savings(self) -> dict:
         """Compare actual cost of cascade requests vs what the originally-classified model would have cost."""
         cur = self._conn.execute(

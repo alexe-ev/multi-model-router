@@ -71,3 +71,13 @@ class ModelInfo(BaseModel):
 class ModelListResponse(BaseModel):
     object: str = "list"
     data: list[ModelInfo]
+
+
+class FeedbackRequest(BaseModel):
+    request_id: int
+    rating: int  # 1 or -1
+
+
+class FeedbackResponse(BaseModel):
+    status: str = "ok"
+    request_id: int

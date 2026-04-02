@@ -587,6 +587,26 @@ def quality(ctx, dataset, judge_model, baseline_model, sample, db):
 
 
 @cli.command()
+@click.argument("request_id", type=int)
+@click.argument("direction", type=click.Choice(["up", "down"]))
+@click.option("--db", default="mmrouter.db", help="Path to tracker database.")
+def feedback(request_id, direction, db):
+    """Submit feedback for a routed request. DIRECTION is 'up' or 'down'."""
+    from mmrouter.tracker.logger import Tracker
+
+    rating = 1 if direction == "up" else -1
+    try:
+        tracker = Tracker(db)
+        tracker.submit_feedback(request_id, rating)
+        tracker.close()
+    except ValueError as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    click.secho(f"Feedback submitted: request {request_id} = {direction}", fg="green")
+
+
+@cli.command()
 @click.option("--port", default=8080, type=int, help="Port to serve on.")
 @click.option("--host", default="0.0.0.0", help="Host to bind to.")
 @click.option("--db", default="mmrouter.db", help="Path to tracker database.")
