@@ -1,0 +1,115 @@
+"""Cost analytics: daily costs, savings estimation, distribution breakdowns."""
+
+from __future__ import annotations
+
+import sqlite3
+
+MODEL_PRICING: dict[str, dict[str, float]] = {
+    "claude-opus-4-6": {"input": 15.0, "output": 75.0},
+    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
+    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.0},
+    "gpt-4o": {"input": 2.50, "output": 10.0},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "gemini-2.0-flash": {"input": 0.10, "output": 0.40},
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.0},
+}
+
+
+class CostAnalytics:
+    """Analyzes routing costs from the tracker database."""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+
+    def daily_costs(self) -> list[dict]:
+        cur = self._conn.execute("""
+            SELECT
+                date(timestamp) as day,
+                model,
+                COUNT(*) as request_count,
+                SUM(cost) as total_cost
+            FROM requests
+            GROUP BY date(timestamp), model
+            ORDER BY date(timestamp) DESC, SUM(cost) DESC
+        """)
+        return [
+            {
+                "date": row[0],
+                "model": row[1],
+                "request_count": row[2],
+                "total_cost": row[3],
+            }
+            for row in cur.fetchall()
+        ]
+
+    def savings_vs_baseline(self, baseline_model: str = "claude-sonnet-4-6") -> dict:
+        cur = self._conn.execute(
+            "SELECT tokens_in, tokens_out, cost, model FROM requests"
+        )
+        rows = cur.fetchall()
+
+        if not rows:
+            return {
+                "actual_cost": 0.0,
+                "baseline_cost": 0.0,
+                "savings": 0.0,
+                "savings_pct": 0.0,
+            }
+
+        pricing = MODEL_PRICING.get(baseline_model)
+        if not pricing:
+            return {
+                "actual_cost": 0.0,
+                "baseline_cost": 0.0,
+                "savings": 0.0,
+                "savings_pct": 0.0,
+            }
+
+        actual_cost = 0.0
+        baseline_cost = 0.0
+
+        for row in rows:
+            tokens_in, tokens_out, cost, _model = row
+            actual_cost += cost
+            baseline_cost += (
+                tokens_in * pricing["input"] / 1_000_000
+                + tokens_out * pricing["output"] / 1_000_000
+            )
+
+        savings = baseline_cost - actual_cost
+        savings_pct = (savings / baseline_cost * 100) if baseline_cost > 0 else 0.0
+
+        return {
+            "actual_cost": round(actual_cost, 6),
+            "baseline_cost": round(baseline_cost, 6),
+            "savings": round(savings, 6),
+            "savings_pct": round(savings_pct, 2),
+        }
+
+    def distribution(self) -> dict:
+        complexity_cur = self._conn.execute("""
+            SELECT complexity, COUNT(*) as count, SUM(cost) as cost
+            FROM requests
+            GROUP BY complexity
+            ORDER BY count DESC
+        """)
+        by_complexity = {
+            row[0]: {"count": row[1], "cost": row[2]}
+            for row in complexity_cur.fetchall()
+        }
+
+        category_cur = self._conn.execute("""
+            SELECT category, COUNT(*) as count, SUM(cost) as cost
+            FROM requests
+            GROUP BY category
+            ORDER BY count DESC
+        """)
+        by_category = {
+            row[0]: {"count": row[1], "cost": row[2]}
+            for row in category_cur.fetchall()
+        }
+
+        return {
+            "by_complexity": by_complexity,
+            "by_category": by_category,
+        }

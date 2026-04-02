@@ -117,17 +117,27 @@ def classify(ctx, prompt, classifier_name):
 @cli.command()
 @click.option("--db", default="mmrouter.db", help="Path to tracker database.")
 @click.option("--json-output", "as_json", is_flag=True, help="Output as JSON.")
-def stats(db, as_json):
+@click.option("--detailed", is_flag=True, help="Show detailed analytics.")
+def stats(db, as_json, detailed):
     """Show routing stats from tracker database."""
     from mmrouter.tracker.logger import Tracker
 
     try:
         tracker = Tracker(db)
         data = tracker.get_stats()
-        tracker.close()
     except Exception as e:
         click.secho(f"Error: {e}", fg="red", err=True)
         sys.exit(1)
+
+    if detailed:
+        from mmrouter.tracker.analytics import CostAnalytics
+
+        analytics = CostAnalytics(tracker.connection)
+        data["daily_costs"] = analytics.daily_costs()
+        data["savings"] = analytics.savings_vs_baseline()
+        data["distribution"] = analytics.distribution()
+
+    tracker.close()
 
     if as_json:
         click.echo(json.dumps(data, indent=2))
@@ -145,6 +155,36 @@ def stats(db, as_json):
         click.secho("Model distribution:", bold=True)
         for model, info in data["model_distribution"].items():
             click.echo(f"  {model}: {info['count']} requests (${info['cost']:.6f})")
+
+    if detailed:
+        daily = data["daily_costs"]
+        if daily:
+            click.echo()
+            click.secho("Daily costs:", bold=True)
+            for entry in daily:
+                click.echo(
+                    f"  {entry['date']}  {entry['model']}: "
+                    f"{entry['request_count']} requests, ${entry['total_cost']:.6f}"
+                )
+
+        savings = data["savings"]
+        click.echo()
+        click.secho("Savings vs baseline (claude-sonnet-4-6):", bold=True)
+        click.echo(f"  Actual cost:   ${savings['actual_cost']:.6f}")
+        click.echo(f"  Baseline cost: ${savings['baseline_cost']:.6f}")
+        click.echo(f"  Savings:       ${savings['savings']:.6f} ({savings['savings_pct']:.1f}%)")
+
+        dist = data["distribution"]
+        if dist["by_complexity"]:
+            click.echo()
+            click.secho("By complexity:", bold=True)
+            for key, info in dist["by_complexity"].items():
+                click.echo(f"  {key}: {info['count']} requests, ${info['cost']:.6f}")
+        if dist["by_category"]:
+            click.echo()
+            click.secho("By category:", bold=True)
+            for key, info in dist["by_category"].items():
+                click.echo(f"  {key}: {info['count']} requests, ${info['cost']:.6f}")
 
 
 @cli.command(name="eval")

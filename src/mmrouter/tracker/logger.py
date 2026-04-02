@@ -95,5 +95,9 @@ class Tracker:
             "model_distribution": model_distribution,
         }
 
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
+
     def close(self) -> None:
         self._conn.close()
