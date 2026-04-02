@@ -114,6 +114,40 @@ class CostAnalytics:
             "by_category": by_category,
         }
 
+    def cache_stats(self) -> dict:
+        """Cache hit rate: cache_read_tokens / total input tokens over time."""
+        cur = self._conn.execute(
+            "SELECT name FROM pragma_table_info('requests') WHERE name = 'cache_read_tokens'"
+        )
+        if not cur.fetchone():
+            return {
+                "total_cache_read_tokens": 0,
+                "total_cache_creation_tokens": 0,
+                "total_input_tokens": 0,
+                "cache_hit_rate": 0.0,
+            }
+
+        cur = self._conn.execute("""
+            SELECT
+                COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+                COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+                COALESCE(SUM(tokens_in), 0) as total_input
+            FROM requests
+        """)
+        row = cur.fetchone()
+        total_read = row[0]
+        total_creation = row[1]
+        total_input = row[2]
+
+        hit_rate = (total_read / total_input * 100) if total_input > 0 else 0.0
+
+        return {
+            "total_cache_read_tokens": total_read,
+            "total_cache_creation_tokens": total_creation,
+            "total_input_tokens": total_input,
+            "cache_hit_rate": round(hit_rate, 2),
+        }
+
     def cascade_savings(self) -> dict:
         """Compare actual cost of cascade requests vs what the originally-classified model would have cost."""
         cur = self._conn.execute(
