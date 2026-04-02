@@ -11,6 +11,7 @@ from mmrouter.classifier.rules import RuleClassifier
 from mmrouter.models import (
     ClassificationResult,
     CompletionResult,
+    Complexity,
     RequestLog,
     RoutingConfig,
 )
@@ -20,12 +21,19 @@ from mmrouter.router.config import load_config
 from mmrouter.router.fallback import CircuitBreakerRegistry, CircuitOpenError
 from mmrouter.tracker.logger import Tracker
 
+_ESCALATION_MAP = {
+    Complexity.SIMPLE: Complexity.MEDIUM,
+    Complexity.MEDIUM: Complexity.COMPLEX,
+    Complexity.COMPLEX: Complexity.COMPLEX,
+}
+
 
 class RoutingResult(BaseModel):
     classification: ClassificationResult
     completion: CompletionResult
     model_used: str
     fallback_used: bool = False
+    escalated: bool = False
 
 
 class Router:
@@ -49,10 +57,18 @@ class Router:
     def route(self, prompt: str) -> RoutingResult:
         classification = self._classifier.classify(prompt)
 
-        route = self._config.get_route(classification.complexity, classification.category)
+        complexity = classification.complexity
+        escalated = False
+        if classification.confidence < self._config.classifier.threshold:
+            new_complexity = _ESCALATION_MAP[complexity]
+            if new_complexity != complexity:
+                escalated = True
+                complexity = new_complexity
+
+        route = self._config.get_route(complexity, classification.category)
         if not route:
             raise ValueError(
-                f"No route for {classification.complexity}/{classification.category}"
+                f"No route for {complexity}/{classification.category}"
             )
 
         models_to_try = [route.model] + route.fallbacks
@@ -78,6 +94,7 @@ class Router:
                     completion=completion,
                     model_used=model,
                     fallback_used=fallback_used,
+                    escalated=escalated,
                 )
 
                 self._tracker.log(RequestLog(

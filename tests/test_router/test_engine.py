@@ -141,9 +141,9 @@ class TestRouter:
 class MockClassifier(ClassifierBase):
     """Classifier that returns a fixed result."""
 
-    def __init__(self, complexity: Complexity, category: Category):
+    def __init__(self, complexity: Complexity, category: Category, confidence: float = 0.9):
         self._result = ClassificationResult(
-            complexity=complexity, category=category, confidence=0.9
+            complexity=complexity, category=category, confidence=confidence
         )
 
     def classify(self, prompt: str) -> ClassificationResult:
@@ -224,4 +224,60 @@ class TestCircuitBreakerIntegration:
         result = router.route("test")
         assert "sonnet" in result.model_used.lower()
         assert len(provider.calls) == 2  # tried haiku, then sonnet
+        router.close()
+
+
+class TestConfidenceRouting:
+    def _make_router(self, tmp_path, complexity, category, confidence):
+        classifier = MockClassifier(complexity, category, confidence)
+        provider = MockProvider()
+        tracker = Tracker(tmp_path / "test.db")
+        router = Router(
+            "configs/default.yaml",
+            classifier=classifier,
+            provider=provider,
+            tracker=tracker,
+        )
+        return router
+
+    def test_low_confidence_simple_escalates_to_medium(self, tmp_path):
+        router = self._make_router(tmp_path, Complexity.SIMPLE, Category.FACTUAL, 0.5)
+        result = router.route("test")
+        assert result.escalated is True
+        assert "sonnet" in result.model_used.lower()
+        router.close()
+
+    def test_low_confidence_medium_escalates_to_complex(self, tmp_path):
+        router = self._make_router(tmp_path, Complexity.MEDIUM, Category.REASONING, 0.4)
+        result = router.route("test")
+        assert result.escalated is True
+        assert "opus" in result.model_used.lower()
+        router.close()
+
+    def test_low_confidence_complex_stays_complex(self, tmp_path):
+        router = self._make_router(tmp_path, Complexity.COMPLEX, Category.CODE, 0.3)
+        result = router.route("test")
+        assert result.escalated is False
+        assert "opus" in result.model_used.lower()
+        router.close()
+
+    def test_high_confidence_no_escalation(self, tmp_path):
+        router = self._make_router(tmp_path, Complexity.SIMPLE, Category.FACTUAL, 0.9)
+        result = router.route("test")
+        assert result.escalated is False
+        assert "haiku" in result.model_used.lower()
+        router.close()
+
+    def test_confidence_at_threshold_no_escalation(self, tmp_path):
+        router = self._make_router(tmp_path, Complexity.SIMPLE, Category.FACTUAL, 0.7)
+        result = router.route("test")
+        assert result.escalated is False
+        assert "haiku" in result.model_used.lower()
+        router.close()
+
+    def test_confidence_just_below_threshold_escalates(self, tmp_path):
+        router = self._make_router(tmp_path, Complexity.SIMPLE, Category.FACTUAL, 0.69)
+        result = router.route("test")
+        assert result.escalated is True
+        assert "sonnet" in result.model_used.lower()
         router.close()
