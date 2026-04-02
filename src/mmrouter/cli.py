@@ -57,6 +57,12 @@ def route(ctx, prompt, verbose, db):
     if result.budget_downgraded:
         click.secho("  (budget: model downgraded due to spend limit)", fg="yellow")
 
+    if result.experiment_id is not None:
+        click.secho(
+            f"  (experiment: id={result.experiment_id} variant={result.variant})",
+            fg="magenta",
+        )
+
     if verbose:
         click.echo()
         click.secho("Classification:", fg="bright_black")
@@ -627,6 +633,147 @@ def serve(ctx, port, host, db, workers):
     app = create_app(config_path=ctx.obj["config"], db_path=db)
     click.echo(f"Starting mmrouter API at http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, workers=workers)
+
+
+@cli.group()
+@click.option("--db", default="mmrouter.db", help="Path to tracker database.")
+@click.pass_context
+def experiment(ctx, db):
+    """Manage A/B testing experiments."""
+    ctx.ensure_object(dict)
+    ctx.obj["experiment_db"] = db
+
+
+@experiment.command(name="create")
+@click.option("--name", required=True, help="Experiment name.")
+@click.option("--control", required=True, type=click.Path(exists=True), help="Path to control config YAML.")
+@click.option("--treatment", required=True, type=click.Path(exists=True), help="Path to treatment config YAML.")
+@click.option("--split", default=0.5, type=float, help="Fraction of traffic to treatment (0.0-1.0).")
+@click.pass_context
+def experiment_create(ctx, name, control, treatment, split):
+    """Create a new A/B experiment between two routing configs."""
+    from mmrouter.experiments.store import ExperimentStore
+    from mmrouter.models import Experiment
+    from mmrouter.router.config import load_config
+    from mmrouter.tracker.logger import Tracker
+
+    if split < 0.0 or split > 1.0:
+        click.secho("Error: --split must be between 0.0 and 1.0", fg="red", err=True)
+        sys.exit(1)
+
+    # Validate both configs parse
+    try:
+        load_config(control)
+    except Exception as e:
+        click.secho(f"Error loading control config: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    try:
+        load_config(treatment)
+    except Exception as e:
+        click.secho(f"Error loading treatment config: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    db = ctx.obj["experiment_db"]
+    tracker = Tracker(db)
+    store = ExperimentStore(tracker.connection)
+
+    try:
+        exp = store.create(Experiment(
+            name=name,
+            control_config=str(Path(control).resolve()),
+            treatment_config=str(Path(treatment).resolve()),
+            traffic_split=split,
+        ))
+    except ValueError as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        tracker.close()
+        sys.exit(1)
+
+    click.secho(f"Experiment created: id={exp.id} name='{exp.name}'", fg="green")
+    click.echo(f"  Control:   {exp.control_config}")
+    click.echo(f"  Treatment: {exp.treatment_config}")
+    click.echo(f"  Split:     {exp.traffic_split:.0%} treatment")
+    tracker.close()
+
+
+@experiment.command(name="status")
+@click.pass_context
+def experiment_status(ctx):
+    """Show current experiment status."""
+    from mmrouter.experiments.store import ExperimentStore
+    from mmrouter.tracker.logger import Tracker
+
+    db = ctx.obj["experiment_db"]
+    tracker = Tracker(db)
+    store = ExperimentStore(tracker.connection)
+
+    experiments = store.list_all()
+    if not experiments:
+        click.echo("No experiments found.")
+        tracker.close()
+        return
+
+    for exp in experiments:
+        status_color = {
+            "active": "green",
+            "stopped": "yellow",
+            "completed": "cyan",
+        }.get(exp.status.value, "white")
+
+        click.echo(f"  [{exp.id}] {exp.name}  ", nl=False)
+        click.secho(exp.status.value, fg=status_color, nl=False)
+        click.echo(f"  split={exp.traffic_split:.0%}")
+        click.echo(f"       control={exp.control_config}")
+        click.echo(f"       treatment={exp.treatment_config}")
+        click.echo(f"       created={exp.created_at.strftime('%Y-%m-%d %H:%M')}")
+        if exp.stopped_at:
+            click.echo(f"       stopped={exp.stopped_at.strftime('%Y-%m-%d %H:%M')}")
+
+        # Show request counts per variant
+        cur = tracker.connection.execute(
+            """SELECT variant, COUNT(*) as cnt, COALESCE(SUM(cost), 0) as cost
+               FROM requests WHERE experiment_id = ? GROUP BY variant""",
+            (exp.id,),
+        )
+        rows = cur.fetchall()
+        if rows:
+            for row in rows:
+                v = row["variant"] or "none"
+                click.echo(f"       {v}: {row['cnt']} requests, ${row['cost']:.6f}")
+        click.echo()
+
+    tracker.close()
+
+
+@experiment.command(name="stop")
+@click.option("--id", "experiment_id", type=int, default=None, help="Experiment ID to stop. Defaults to active.")
+@click.pass_context
+def experiment_stop(ctx, experiment_id):
+    """Stop an active experiment."""
+    from mmrouter.experiments.store import ExperimentStore
+    from mmrouter.tracker.logger import Tracker
+
+    db = ctx.obj["experiment_db"]
+    tracker = Tracker(db)
+    store = ExperimentStore(tracker.connection)
+
+    try:
+        if experiment_id is not None:
+            exp = store.stop(experiment_id)
+        else:
+            exp = store.stop_active()
+            if exp is None:
+                click.echo("No active experiment to stop.")
+                tracker.close()
+                return
+    except ValueError as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        tracker.close()
+        sys.exit(1)
+
+    click.secho(f"Experiment stopped: id={exp.id} name='{exp.name}'", fg="yellow")
+    tracker.close()
 
 
 @cli.command()

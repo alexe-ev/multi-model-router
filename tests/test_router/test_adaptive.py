@@ -36,6 +36,8 @@ def _insert_request(conn, model="model-a", complexity="simple", category="factua
             1,
             0,
             0,
+            None,
+            None,
         ),
     )
     conn.commit()
