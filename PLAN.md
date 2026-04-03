@@ -277,7 +277,7 @@ multi-model-router/
 
 ### MVP
 - [x] `mmrouter route "prompt"` работает end-to-end
-- [x] Rule-based classifier accuracy >= 65% на eval set (67%)
+- [x] Rule-based classifier accuracy >= 65% на eval set (78%, improved from 67%)
 - [ ] Cost savings >= 30% vs single-model baseline (requires live traffic measurement)
 - [x] Fallback работает при недоступности primary model
 
@@ -318,11 +318,21 @@ Security and quality improvements from code review findings:
 - [x] **KN-153** Perf: FeedbackScorer TTL cache for adaptive routing (PR #23)
 - [x] **KN-154** Docs: update architecture, README, PLAN.md (PR #24)
 
-### Backlog (nice-to-have)
+---
+
+## 9. Product Quality: Classifier + E2E Testing (completed 2026-04-03)
+
+- [x] **KN-155** Classifier accuracy: 67% -> 78% overall, 78% -> 90% complexity (PR #25)
+- [x] E2E product tests: 20 tests with real OpenAI API (routing, streaming, REST API, feedback, cost tracking)
+- [x] configs/openai.yaml for OpenAI-based testing
+
+### Backlog
 - [ ] **KN-148** A/B testing: statistical analysis + CLI commands + API endpoints
 - [ ] **KN-149** A/B testing: dashboard frontend visualization
+- [ ] **KN-156** Benchmark LLM classifier with real API
+- [ ] **KN-157** E2E cascade + budget mode tests
 
-### Stats after Phase 3 + code quality
-- 481 tests passing
+### Stats
+- 501 tests passing (481 unit + 20 e2e)
 - 24 PRs merged
 - All 3 phases complete
