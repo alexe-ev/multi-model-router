@@ -278,14 +278,14 @@ multi-model-router/
 ### MVP
 - [x] `mmrouter route "prompt"` работает end-to-end
 - [x] Rule-based classifier accuracy >= 65% на eval set (67%)
-- [ ] Cost savings >= 30% vs single-model baseline (measured)
+- [ ] Cost savings >= 30% vs single-model baseline (requires live traffic measurement)
 - [x] Fallback работает при недоступности primary model
 
 ### V1
 - [x] Три стратегии классификации реализованы и сравнены
 - [ ] Best classifier accuracy >= 85% (embedding 78%, need LLM eval with API key)
-- [ ] Cost savings >= 40% (need live traffic measurement)
-- [ ] Quality delta < 5% vs single-model (need live traffic measurement)
+- [ ] Cost savings >= 40% (requires live traffic measurement)
+- [ ] Quality delta < 5% vs single-model (requires live traffic measurement)
 - [x] Dashboard показывает: distribution, costs, savings, quality, errors
 - [x] README с business case и реальными цифрами
 
@@ -294,6 +294,8 @@ multi-model-router/
 - [x] Budget mode удерживает расходы в пределах заданного лимита
 - [x] REST API совместим с OpenAI client (drop-in)
 - [ ] 10+ GitHub stars (первый сигнал adoption)
+
+Note: unchecked items require live traffic with API keys. Cannot be measured in dev environment.
 
 ---
 
@@ -304,3 +306,23 @@ multi-model-router/
 3. **Dashboard.** React SPA (Vite + Recharts). Отдельный build step, но production-grade.
 4. **Eval dataset.** General для начала. Domain-specific добавим по мере необходимости.
 5. **Launch strategy.** Закрытая бета сначала. Публичный launch позже.
+
+---
+
+## 8. Post-Phase 3: Code Quality (completed 2026-04-03)
+
+Security and quality improvements from code review findings:
+
+- [x] **KN-151** Security: constant-time API key comparison (hmac.compare_digest) + stream error wrapping (PR #21)
+- [x] **KN-152** Refactor: StreamRouteResult dataclass, Router.passthrough_messages() (PR #22)
+- [x] **KN-153** Perf: FeedbackScorer TTL cache for adaptive routing (PR #23)
+- [x] **KN-154** Docs: update architecture, README, PLAN.md (PR #24)
+
+### Backlog (nice-to-have)
+- [ ] **KN-148** A/B testing: statistical analysis + CLI commands + API endpoints
+- [ ] **KN-149** A/B testing: dashboard frontend visualization
+
+### Stats after Phase 3 + code quality
+- 481 tests passing
+- 24 PRs merged
+- All 3 phases complete
