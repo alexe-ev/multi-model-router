@@ -18,7 +18,9 @@ _CODE_KEYWORDS = {
 
 _REASONING_KEYWORDS = {
     "why", "explain", "compare", "analyze", "evaluate", "trade-off", "tradeoff",
-    "difference", "between", "versus", "pros", "cons", "advantage", "disadvantage",
+    "trade-offs", "tradeoffs",
+    "difference", "between", "versus", "pros", "cons",
+    "advantage", "disadvantage", "advantages", "disadvantages",
     "cause", "effect", "impact", "reason", "because", "therefore", "however",
     "although", "contrast", "implication", "consequence", "argue", "justify",
     "critique", "assess", "consider", "perspective", "debate",
@@ -45,13 +47,23 @@ _COMPLEX_KEYWORDS = {
 }
 
 _MEDIUM_PATTERNS = [
-    r"\bexplain (how|why|what)\b",
-    r"\bhow does .+ work\b",
-    r"\bdescribe (the|how|what)\b",
+    r"\bexplain\b",
+    r"\bhow (do|does|did|can|should|would)\b",
+    r"\bdescribe\b",
     r"\bsummarize\b",
     r"\bwhat are the .+ (of|between|for)\b",
-    r"\bcompare .+ (and|vs|versus|with)\b",
+    r"\bcompare\b",
+    r"\bcontrast\b",
+    r"\b(trade.?offs?|tradeoffs?|pros and cons)\b",
+    r"\b(advantages?|disadvantages?)\b",
+    r"\bdifference(s)? between\b",
+    r"\b(outline|walk\s+(?:me\s+|us\s+)?through)\b",
 ]
+
+# Verbs that signal complex/analytical intent when combined with length
+_COMPLEX_VERB_PATTERN = re.compile(
+    r"\b(analyze|evaluate|architect|design|critique|assess)\b", re.IGNORECASE
+)
 
 _SIMPLE_PATTERNS = [
     r"^what is\b",
@@ -103,11 +115,17 @@ class RuleClassifier(ClassifierBase):
         )
 
     def _classify_category(self, prompt: str) -> tuple[Category, float]:
+        prompt_lower = prompt.lower()
         scores = {
             Category.CODE: _keyword_score(prompt, _CODE_KEYWORDS),
             Category.REASONING: _keyword_score(prompt, _REASONING_KEYWORDS),
             Category.CREATIVE: _keyword_score(prompt, _CREATIVE_KEYWORDS),
         }
+
+        # Boost REASONING when comparison/analysis phrases are present
+        # (prevents tech terms like "sql" from pulling toward CODE)
+        if re.search(r"\b(trade.?offs?|pros and cons|advantages?|disadvantages?|difference between|compare)\b", prompt_lower):
+            scores[Category.REASONING] += 3
 
         max_cat = max(scores, key=scores.get)
         max_score = scores[max_cat]
@@ -132,7 +150,7 @@ class RuleClassifier(ClassifierBase):
         words = _word_count(prompt)
         prompt_lower = prompt.lower()
 
-        # Check simple patterns first
+        # Check simple patterns first (only for short prompts)
         for pattern in _SIMPLE_PATTERNS:
             if re.search(pattern, prompt_lower):
                 if words <= 15:
@@ -143,34 +161,44 @@ class RuleClassifier(ClassifierBase):
         complex_score = _keyword_score(prompt, _COMPLEX_KEYWORDS)
         if complex_score >= 2:
             return Complexity.COMPLEX, 0.9
-        if complex_score == 1 and words > 15:
+        if complex_score == 1 and words > 12:
             return Complexity.COMPLEX, 0.8
+
+        # Complex verb + length: analytical tasks
+        if _COMPLEX_VERB_PATTERN.search(prompt_lower) and words > 15:
+            return Complexity.COMPLEX, 0.75
 
         # Code tasks with action keywords are at least medium
         if category == Category.CODE and words >= 5:
             code_action = any(
                 re.search(rf"\b{w}\b", prompt_lower)
-                for w in ("implement", "build", "create", "design", "refactor", "optimize")
+                for w in ("implement", "build", "create", "design", "refactor", "optimize", "write")
             )
             if code_action:
                 if words > 20:
                     return Complexity.COMPLEX, 0.8
                 return Complexity.MEDIUM, 0.8
 
-        # Medium patterns: explanation/description requests
-        has_medium_signal = any(
-            re.search(p, prompt_lower) for p in _MEDIUM_PATTERNS
+        # Medium patterns: explanation/description/comparison requests
+        medium_signal_count = sum(
+            1 for p in _MEDIUM_PATTERNS if re.search(p, prompt_lower)
         )
-        if has_medium_signal and words > 8:
-            if words > 30:
+        if medium_signal_count >= 2:
+            # Two+ signals: strong medium intent regardless of length
+            if words > 25:
                 return Complexity.COMPLEX, 0.7
             return Complexity.MEDIUM, 0.8
+        if medium_signal_count == 1 and words >= 8:
+            # Single signal needs decent length to distinguish from simple
+            if words > 25:
+                return Complexity.COMPLEX, 0.7
+            return Complexity.MEDIUM, 0.75
 
-        # Length heuristics
+        # Length heuristics (fallback when no patterns matched)
         if words <= 8:
             return Complexity.SIMPLE, 0.85
         if words <= 15:
             return Complexity.MEDIUM, 0.7
-        if words <= 30:
+        if words <= 25:
             return Complexity.MEDIUM, 0.75
         return Complexity.COMPLEX, 0.7
