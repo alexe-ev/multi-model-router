@@ -1,9 +1,18 @@
 # Multi-Model Router: Implementation Plan
 
-## 1. Positioning
+## 1. Positioning (revised 2026-04-03)
 
 ### Что это
-Open-source Python-пакет для интеллектуальной маршрутизации LLM-запросов. Classifier анализирует входящий запрос, определяет сложность и тип, направляет к оптимальной модели. На выходе: экономия 40-70% на LLM-расходах без деградации качества.
+LLM cost optimization through intelligent routing. Open-source Python-пакет, который анализирует каждый запрос и направляет к оптимальной модели. Экономия 40-85% на LLM-расходах без деградации качества. Zero code changes: замена одной строки base_url.
+
+Details: `decisions/2026-04-03-positioning.md`
+
+### Для кого
+- **Self-hosted:** developers, $0. "Cut LLM costs 40-85%. Open-source."
+- **Managed proxy:** маленькие команды (<$500/мес LLM). "One API key, we route to the cheapest model that works."
+- **Cloud BYOK:** средние/крупные ($5K+/мес). "Your keys, your data, our routing intelligence."
+
+Threshold: $500-1000/мес LLM spend. Ниже - pair of if-statements достаточно.
 
 ### Чем отличается от существующих решений
 
@@ -34,55 +43,44 @@ Open-source Python-пакет для интеллектуальной маршр
 
 ---
 
-## 2. Monetization
+## 2. Monetization (revised 2026-04-03)
 
-### Модель: Open-core + usage-based cloud
+### Модель: Hybrid (markup for proxy + % of savings for BYOK)
 
-Паттерн, который работает в AI-тулинге 2025-2026: Langfuse, Portkey, PostHog, LiteLLM. Open-source для adoption, cloud для revenue.
+Пересмотрено после QA-сессии. Flat subscription не работает: маленьким невыгодно, большим мало. Details: `decisions/2026-04-03-monetization-v2.md`.
 
-### Tier structure
+### Три сегмента
 
-| Tier | Что входит | Цена |
-|------|-----------|------|
-| **Self-hosted (free forever)** | Полный функционал: все классификаторы, routing engine, cost tracker, dashboard. Без ограничений по запросам. | $0 |
-| **Cloud Free** | Hosted version. До 25K routed requests/мес. 7-дневное хранение логов. 1 routing config. | $0 |
-| **Cloud Pro** | До 500K req/мес. 90-дневные логи. Unlimited configs. Email alerts. API access к analytics. | $39/мес + $8 per 100K overage |
-| **Cloud Team** | 2M req/мес. 1-year retention. Team access (5 seats). Slack alerts. Priority support. Custom evaluation rubrics. | $149/мес + $6 per 100K overage |
-| **Enterprise** | Unlimited. VPC/on-prem deployment. Custom classifier training. SLA. SSO/SAML. Dedicated support. | Custom ($2K+/мес) |
+| Сегмент | Продукт | Как платит |
+|---------|---------|------------|
+| **Developers, хоббисты** | Self-hosted (free forever) | $0. Distribution engine. |
+| **Маленькие команды** (<$500/мес LLM) | Managed proxy (наш API ключ) | 5% markup на pass-through. $100 spend = $5 нам. |
+| **Средние/крупные** (>$500/мес LLM) | Cloud BYOK (свои ключи) | 15-20% от измеренной экономии. |
 
-### Почему эта модель
+### Revenue math
 
-- **Не per-request pricing** (как Martian $0.004/req). Создает friction и воспринимается как "скрытый налог". Usage-based с generous free tier конвертирует лучше.
-- **Не markup на модели** (как OpenRouter 5%). Мы не прокси, мы routing intelligence. Модели оплачиваются напрямую провайдерам.
-- **Free tier достаточно для прототипа и small-scale.** Переход на paid происходит естественно при росте трафика.
+Managed proxy (5% markup):
+- 500 users x $200/мес avg spend x 5% = $5,000/мес
 
-### Revenue math (conservative)
+Cloud BYOK (% of savings):
+- 50 users x $5K/мес spend x 35% savings x 17.5% fee = $15,300/мес
+- 10 users x $20K/мес spend x 40% savings x 17.5% fee = $14,000/мес
 
-При 200 платящих клиентах (реалистично через 12-18 мес после launch):
-- 120 на Pro ($39) = $4,680/мес
-- 60 на Team ($149) = $8,940/мес  
-- 15 на Enterprise ($3K avg) = $45,000/мес
-- Overage: ~$5,000/мес
-- **Total: ~$63K/мес = ~$760K ARR**
-
-Для сравнения: Requesty достиг $1.5M ARR с 25K developers. OpenRouter: $5M ARR.
+**Total at scale: ~$34K/мес = ~$410K ARR**
 
 ### Что НЕ монетизируем
+- Core routing engine (MIT, бесплатно навсегда)
+- Все классификаторы, dashboard, CLI
+- Self-hosted без ограничений
 
-- Core routing engine (всегда open-source)
-- Число моделей/провайдеров
-- Число стратегий классификации
-- Dashboard (basic version)
+### Cloud-only features (conversion drivers)
+1. Cross-client benchmarks (network effect, невозможно self-hosted)
+2. Auto-tuning (continuous routing optimization)
+3. Pre-trained industry classifiers (data moat)
+4. Compliance package (SOC2, audit logs, data residency)
+5. Collaborative config management (PR-like workflow с impact simulation)
 
-### Что монетизируем (cloud-only features)
-
-- Hosted infrastructure (не нужно ставить и поддерживать самому)
-- Длинное хранение логов (90 дней+ vs 7)
-- Team collaboration (shared configs, role-based access)
-- Advanced alerting (Slack, PagerDuty, webhooks)
-- Custom classifier training на своих данных
-- A/B testing layer для routing strategies
-- Enterprise compliance (SOC2, audit logs, VPC)
+Details: `decisions/2026-04-03-cloud-features.md`
 
 ---
 
@@ -326,13 +324,44 @@ Security and quality improvements from code review findings:
 - [x] E2E product tests: 20 tests with real OpenAI API (routing, streaming, REST API, feedback, cost tracking)
 - [x] configs/openai.yaml for OpenAI-based testing
 
-### Backlog
-- [ ] **KN-148** A/B testing: statistical analysis + CLI commands + API endpoints
-- [ ] **KN-149** A/B testing: dashboard frontend visualization
-- [ ] **KN-156** Benchmark LLM classifier with real API
-- [ ] **KN-157** E2E cascade + budget mode tests
-
 ### Stats
 - 501 tests passing (481 unit + 20 e2e)
-- 24 PRs merged
-- All 3 phases complete
+- 26 PRs merged
+- All 3 phases + code quality + e2e complete
+
+---
+
+## 10. Strategic Decisions (2026-04-03)
+
+QA-сессия выявила 5 стратегических вопросов. Исследование проведено, решения зафиксированы.
+
+| Вопрос | Решение | Decision file |
+|--------|---------|---------------|
+| Monetization | Hybrid: 5% markup (proxy) + 15-20% of savings (BYOK) | `decisions/2026-04-03-monetization-v2.md` |
+| Licensing | MIT now, add proprietary /ee later | `decisions/2026-04-03-opensource-strategy.md` |
+| Privacy | Client-side classifier default, opt-in transient | `decisions/2026-04-03-privacy-architecture.md` |
+| Positioning | "LLM cost optimization through intelligent routing" | `decisions/2026-04-03-positioning.md` |
+| Cloud features | Network-effect first: benchmarks, auto-tuning | `decisions/2026-04-03-cloud-features.md` |
+
+---
+
+## 11. Cloud Platform Roadmap
+
+### Phase 4: Open-Source Launch (P8) — prerequisite
+- MIT LICENSE, PyPI publish, GitHub release v1.0
+- Landing page, demo, positioning
+- Backlog: KN-148/149 (A/B testing), KN-156 (LLM benchmark), KN-157 (e2e cascade/budget)
+
+### Phase 5: Cloud MVP (P9 + P10, parallel)
+- **P9: Auth & Multi-Tenancy**: registration, OAuth, workspace model, API keys, SQLite -> PostgreSQL
+- **P10: Cloud Infrastructure**: Docker, CI/CD, hosting (Railway/Fly.io/Render), Sentry, managed PG
+
+### Phase 6: Monetization (P11 + P12, parallel)
+- **P11: Managed Proxy**: our provider keys, multi-tenant endpoint, 5% markup, Stripe, free tier
+- **P12: Web UI**: personal cabinet, onboarding, analytics dashboard, landing page
+
+### Phase 7: Advanced (P13)
+- **P13: BYOK & Savings Billing**: encrypted key storage, savings measurement, % of savings billing, privacy mode
+
+### Dependency chain
+P8 -> P9 + P10 (parallel) -> P11 + P12 (parallel) -> P13
