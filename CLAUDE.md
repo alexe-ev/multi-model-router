@@ -8,51 +8,64 @@ Multi-Model Router: intelligent LLM request routing system. Classifier analyzes 
 
 ## Stack
 
-- Python 3.11+ / Click (CLI) / FastAPI (dashboard backend)
+- Python 3.11+ / Click (CLI) / FastAPI (server + dashboard)
 - LiteLLM (multi-provider API, pinned version, wrapped in ProviderBase)
 - sentence-transformers (embedding classification, local)
-- SQLite + WAL mode (request/cost logging)
+- SQLite + WAL mode (request/cost/feedback/experiment logging)
 - React + Vite + Recharts (dashboard SPA)
 - strictyaml (config parsing)
-- pytest (tests and eval)
+- pytest (471 tests)
 
 ## Structure
 
 ```
 src/mmrouter/          # Python package
   classifier/          # rules.py, embeddings.py, llm_classifier.py
-  router/              # engine.py, config.py, fallback.py
-  providers/           # litellm_provider.py (behind ProviderBase ABC)
+  router/              # engine.py, config.py, cascade.py, budget.py, fallback.py, adaptive.py
+  providers/           # litellm_provider.py, base.py, cache.py
   tracker/             # logger.py (SQLite), analytics.py
   eval/                # evaluate.py, compare.py, quality.py
+  server/              # app.py (OpenAI-compatible REST API), auth.py, models.py
+  dashboard/           # app.py (FastAPI backend for React SPA)
+  experiments/         # store.py, splitter.py (A/B testing)
+  alerts/              # rules.py, channels.py (webhook/log alerting)
   cli.py               # Click entry point
   api.py               # Programmatic API
-dashboard/             # React SPA (Vite)
-configs/               # YAML routing configs
+  models.py            # Shared data models (Pydantic)
+configs/               # YAML routing configs (default, cascade, budget, multi-provider)
 eval_data/             # Labeled test queries
+dashboard/             # React SPA (Vite)
 ```
 
 ## Commands
 
 ```bash
-pip install -e .                    # Install for development
-pytest                              # Run all tests
-pytest tests/test_classifier/       # Run classifier tests only
+pip install -e ".[dev,embeddings,dashboard,server]"  # Install everything
+pytest                              # Run all 471 tests
+pytest tests/test_router/           # Run router tests only
 mmrouter route "prompt"             # Classify + route + respond
 mmrouter classify "prompt"          # Classify only (debug)
 mmrouter eval                       # Run eval set
-mmrouter stats                      # Show cost/routing summary
+mmrouter stats --detailed           # Show cost/routing/budget summary
+mmrouter train --data x.yaml --output model  # Train custom classifier
+mmrouter serve --port 8080          # Start OpenAI-compatible API
+mmrouter dashboard --port 8000      # Start dashboard
+mmrouter feedback <id> up|down      # Submit routing feedback
+mmrouter experiment create/status/stop  # A/B testing
+mmrouter alerts status|test         # Alert management
 ```
 
 ## Conventions
 
 - All classifiers implement `ClassifierBase.classify(prompt) -> ClassificationResult`
 - All providers implement `ProviderBase.complete(prompt, model) -> CompletionResult`
+- Provider also supports `complete_messages(messages, model)` and `stream_messages(messages, model)` for the REST API
 - Routing config is YAML, PM-editable. Never hardcode model names in Python.
 - LiteLLM is isolated behind `ProviderBase`. Never import litellm outside `providers/`.
 - API keys only via environment variables. Never in code, config, or logs.
 - Prompts logged to SQLite but never to stdout/stderr in production.
-- Circuit breaker is per-provider, not global.
+- Circuit breaker is per-model AND per-provider (two-layer architecture).
+- Provider detection uses prefix heuristics (claude-* = anthropic, gpt-* = openai, gemini-* = google) + configurable provider_map override.
 
 ## Docs
 

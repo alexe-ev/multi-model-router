@@ -247,15 +247,15 @@ multi-model-router/
 
 **Scope:**
 
-- [ ] **Cascade routing.** Cheap model first, escalate if low confidence. Measure cost savings vs quality trade-off.
-- [ ] **Adaptive routing.** Система учится на user feedback (thumbs up/down), корректирует routing weights.
-- [ ] **Multi-provider support.** Routing между Anthropic, OpenAI, Google с automatic failover при outages.
-- [ ] **Budget mode.** "Max quality within $X/day." Динамическое переключение моделей при приближении к бюджету.
-- [ ] **A/B testing layer.** Сравнение двух routing strategies на live трафике. Statistical significance.
-- [ ] **Alerting.** Slack/webhook уведомления при cost spike, quality drop, high error rate.
-- [ ] **REST API endpoint.** Deploy как microservice. OpenAI-compatible API (drop-in replacement).
-- [ ] **Custom classifier training.** CLI для обучения embedding-classifier на своих данных.
-- [ ] **Prompt caching integration.** Автоматический prompt caching для повторяющихся system prompts.
+- [x] **Cascade routing.** Cheap model first, escalate if low confidence. Measure cost savings vs quality trade-off.
+- [x] **Adaptive routing.** Система учится на user feedback (thumbs up/down), корректирует routing weights.
+- [x] **Multi-provider support.** Routing между Anthropic, OpenAI, Google с automatic failover при outages.
+- [x] **Budget mode.** "Max quality within $X/day." Динамическое переключение моделей при приближении к бюджету.
+- [x] **A/B testing layer.** Сравнение двух routing strategies на live трафике. Statistical significance.
+- [x] **Alerting.** Slack/webhook уведомления при cost spike, quality drop, high error rate.
+- [x] **REST API endpoint.** Deploy как microservice. OpenAI-compatible API (drop-in replacement).
+- [x] **Custom classifier training.** CLI для обучения embedding-classifier на своих данных.
+- [x] **Prompt caching integration.** Автоматический prompt caching для повторяющихся system prompts.
 
 **Deliverable:** Production-ready сервис. Основа для cloud-hosted version.
 
@@ -284,15 +284,15 @@ multi-model-router/
 ### V1
 - [x] Три стратегии классификации реализованы и сравнены
 - [ ] Best classifier accuracy >= 85% (embedding 78%, need LLM eval with API key)
-- [ ] Cost savings >= 40%
-- [ ] Quality delta < 5% vs single-model
-- [ ] Dashboard показывает: distribution, costs, savings, quality, errors
-- [ ] README с business case и реальными цифрами
+- [ ] Cost savings >= 40% (need live traffic measurement)
+- [ ] Quality delta < 5% vs single-model (need live traffic measurement)
+- [x] Dashboard показывает: distribution, costs, savings, quality, errors
+- [x] README с business case и реальными цифрами
 
 ### V2
-- [ ] Cascade routing дает дополнительную экономию vs базовый routing
-- [ ] Budget mode удерживает расходы в пределах заданного лимита
-- [ ] REST API совместим с OpenAI client (drop-in)
+- [x] Cascade routing дает дополнительную экономию vs базовый routing
+- [x] Budget mode удерживает расходы в пределах заданного лимита
+- [x] REST API совместим с OpenAI client (drop-in)
 - [ ] 10+ GitHub stars (первый сигнал adoption)
 
 ---
