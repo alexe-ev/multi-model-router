@@ -797,5 +797,75 @@ def dashboard(db, port, host):
     uvicorn.run(app, host=host, port=port)
 
 
+@cli.group()
+@click.pass_context
+def alerts(ctx):
+    """Manage alerting rules and webhooks."""
+    pass
+
+
+@alerts.command(name="status")
+@click.option("--db", default="mmrouter.db", help="Path to tracker database.")
+@click.pass_context
+def alerts_status(ctx, db):
+    """Show active alert rules, cooldown state, and webhook config."""
+    from mmrouter.router.engine import Router
+
+    try:
+        router = Router(ctx.obj["config"], db_path=db)
+        status = router.get_alerts_status()
+        router.close()
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red", err=True)
+        sys.exit(1)
+
+    if not status.get("enabled"):
+        click.echo("Alerting is disabled. Enable in config YAML:")
+        click.echo("  alerts:")
+        click.echo("    enabled: true")
+        return
+
+    click.secho("Alerting status", bold=True)
+    webhook_url = status.get("webhook_url")
+    if webhook_url:
+        click.echo(f"  Webhook: {webhook_url}")
+    else:
+        click.echo("  Webhook: not configured")
+
+    click.echo()
+    click.secho("Rules:", bold=True)
+    for rule in status.get("rules", []):
+        state = "COOLDOWN" if rule["in_cooldown"] else "active"
+        color = "yellow" if rule["in_cooldown"] else "green"
+        click.echo(f"  {rule['name']}  ", nl=False)
+        click.secho(state, fg=color, nl=False)
+        if rule["in_cooldown"]:
+            click.echo(f"  ({rule['cooldown_remaining']}s remaining)", nl=False)
+        click.echo(f"  severity={rule['severity']}  cooldown={rule['cooldown_seconds']}s")
+
+
+@alerts.command(name="test")
+@click.option("--webhook-url", required=True, help="Webhook URL to send test alert to.")
+def alerts_test(webhook_url):
+    """Send a test alert to verify webhook delivery."""
+    from mmrouter.alerts.channels import Alert, WebhookChannel
+
+    channel = WebhookChannel(webhook_url)
+    test_alert = Alert(
+        rule_name="test",
+        message="This is a test alert from mmrouter",
+        severity="warning",
+        details={"test": True},
+    )
+
+    click.echo(f"Sending test alert to {webhook_url}...")
+    success = channel.send(test_alert)
+    if success:
+        click.secho("Test alert sent successfully.", fg="green")
+    else:
+        click.secho("Test alert delivery failed. Check the URL and try again.", fg="red")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     cli()

@@ -8,6 +8,7 @@ import strictyaml as sy
 
 from mmrouter.models import (
     AdaptiveConfig,
+    AlertsConfig,
     BudgetConfig,
     CascadeConfig,
     Category,
@@ -75,6 +76,13 @@ _adaptive_schema = sy.Map({
     sy.Optional("boost_threshold"): sy.Float(),
 })
 
+_alerts_schema = sy.Map({
+    sy.Optional("enabled"): sy.Bool(),
+    sy.Optional("webhook_url"): sy.Str(),
+    sy.Optional("cooldown_seconds"): sy.Int(),
+    sy.Optional("rules"): sy.Seq(sy.Str()),
+})
+
 _config_schema = sy.Map({
     sy.Optional("version"): sy.Str(),
     "routes": _routes_schema,
@@ -83,6 +91,7 @@ _config_schema = sy.Map({
     sy.Optional("cascade"): _cascade_schema,
     sy.Optional("budget"): _budget_schema,
     sy.Optional("adaptive"): _adaptive_schema,
+    sy.Optional("alerts"): _alerts_schema,
 })
 
 
@@ -195,6 +204,27 @@ def load_config(path: str | Path) -> RoutingConfig:
             adaptive_kwargs["boost_threshold"] = float(adp_data["boost_threshold"])
         adaptive = AdaptiveConfig(**adaptive_kwargs)
 
+    alerts = AlertsConfig()
+    if "alerts" in data and data["alerts"]:
+        alt_data = data["alerts"]
+        alerts_kwargs = {}
+        if "enabled" in alt_data:
+            alerts_kwargs["enabled"] = alt_data["enabled"]
+        if "webhook_url" in alt_data:
+            alerts_kwargs["webhook_url"] = alt_data["webhook_url"]
+        if "cooldown_seconds" in alt_data:
+            alerts_kwargs["cooldown_seconds"] = alt_data["cooldown_seconds"]
+        if "rules" in alt_data:
+            valid_rules = {"cost_spike", "error_rate", "budget_warning"}
+            for rule_name in alt_data["rules"]:
+                if rule_name not in valid_rules:
+                    raise ConfigError(
+                        f"Unknown alert rule '{rule_name}'. "
+                        f"Valid: {', '.join(sorted(valid_rules))}"
+                    )
+            alerts_kwargs["rules"] = alt_data["rules"]
+        alerts = AlertsConfig(**alerts_kwargs)
+
     return RoutingConfig(
         version=data.get("version", "1"),
         routes=routes,
@@ -203,4 +233,5 @@ def load_config(path: str | Path) -> RoutingConfig:
         cascade=cascade,
         budget=budget,
         adaptive=adaptive,
+        alerts=alerts,
     )
