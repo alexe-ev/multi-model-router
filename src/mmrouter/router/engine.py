@@ -11,6 +11,11 @@ from mmrouter.classifier import ClassifierBase
 from mmrouter.classifier.rules import RuleClassifier
 from mmrouter.experiments.splitter import assign_variant
 from mmrouter.experiments.store import ExperimentStore
+from mmrouter.alerts.rules import (
+    BUILTIN_RULES,
+    AlertManager,
+    create_budget_warning_rule,
+)
 from mmrouter.models import (
     CascadeConfig,
     ClassificationResult,
@@ -82,6 +87,24 @@ class Router:
         self._config_cache: dict[str, RoutingConfig] = {
             self._config_path: self._config,
         }
+        # Alerting
+        self._alert_manager: AlertManager | None = None
+        if self._config.alerts.enabled:
+            alert_rules = []
+            for rule_name in self._config.alerts.rules:
+                if rule_name == "budget_warning":
+                    alert_rules.append(create_budget_warning_rule(
+                        daily_limit=self._config.budget.daily_limit,
+                        cooldown=self._config.alerts.cooldown_seconds,
+                    ))
+                elif rule_name in BUILTIN_RULES:
+                    alert_rules.append(BUILTIN_RULES[rule_name])
+            self._alert_manager = AlertManager(
+                self._tracker.connection,
+                rules=alert_rules,
+                webhook_url=self._config.alerts.webhook_url,
+                cooldown_seconds=self._config.alerts.cooldown_seconds,
+            )
 
     def _load_config(self, path: str) -> RoutingConfig:
         """Load and cache a routing config."""
@@ -211,6 +234,7 @@ class Router:
                         experiment_id=experiment_id,
                         variant=variant,
                     )
+                    self._check_alerts()
                     return result
                 # Quality gate failed, try next model
             except ProviderError as e:
@@ -344,6 +368,7 @@ class Router:
                     variant=variant,
                 )
 
+                self._check_alerts()
                 return result
             except ProviderError as e:
                 self._record_failure_and_propagate(model, e.retryable)
@@ -506,6 +531,15 @@ class Router:
             f"Tried: {models_to_try}. Last error: {last_error}"
         )
 
+    def _check_alerts(self) -> None:
+        """Evaluate alert rules after a request. Non-blocking: failures are logged, not raised."""
+        if self._alert_manager is None:
+            return
+        try:
+            self._alert_manager.check_all()
+        except Exception:
+            pass  # Alert failures must never break routing
+
     def classify(self, prompt: str) -> ClassificationResult:
         return self._classifier.classify(prompt)
 
@@ -527,6 +561,14 @@ class Router:
     def get_budget_status(self) -> dict:
         """Return current budget status."""
         return self._budget.get_status()
+
+    def get_alerts_status(self) -> dict:
+        """Return alerting system status."""
+        if self._alert_manager is None:
+            return {"enabled": False}
+        status = self._alert_manager.get_status()
+        status["enabled"] = True
+        return status
 
     @property
     def experiment_store(self) -> ExperimentStore:

@@ -62,6 +62,15 @@ class RequestLog(BaseModel):
         return hashlib.sha256(prompt.encode()).hexdigest()[:16]
 
 
+class AlertsConfig(BaseModel):
+    """Configuration for alerting system."""
+
+    enabled: bool = False
+    webhook_url: str | None = None
+    cooldown_seconds: int = 300
+    rules: list[str] = Field(default_factory=lambda: ["cost_spike", "error_rate", "budget_warning"])
+
+
 class AdaptiveConfig(BaseModel):
     """Configuration for feedback-driven adaptive routing."""
 
@@ -154,6 +163,7 @@ class RoutingConfig(BaseModel):
     cascade: CascadeConfig = Field(default_factory=CascadeConfig)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     adaptive: AdaptiveConfig = Field(default_factory=AdaptiveConfig)
+    alerts: AlertsConfig = Field(default_factory=AlertsConfig)
 
     def get_route(self, complexity: Complexity, category: Category) -> ModelRoute | None:
         complexity_routes = self.routes.get(complexity.value)
