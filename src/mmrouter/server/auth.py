@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import os
 
 from fastapi import HTTPException, Request
@@ -22,5 +23,5 @@ async def verify_api_key(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
 
     token = auth_header[7:]  # Strip "Bearer "
-    if token != expected_key:
+    if not hmac.compare_digest(token, expected_key):
         raise HTTPException(status_code=401, detail="Invalid API key")
