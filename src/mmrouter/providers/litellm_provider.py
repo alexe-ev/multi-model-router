@@ -102,13 +102,26 @@ class LiteLLMProvider(ProviderBase):
                 messages, model, self._config.provider_map or None
             )
 
-        response = litellm.completion(
-            model=model,
-            messages=messages,
-            stream=True,
-            timeout=self._config.timeout_ms / 1000,
-            **kwargs,
-        )
+        try:
+            response = litellm.completion(
+                model=model,
+                messages=messages,
+                stream=True,
+                timeout=self._config.timeout_ms / 1000,
+                **kwargs,
+            )
+        except _PERMANENT_ERRORS as e:
+            raise ProviderError(
+                f"Permanent error from {model}: {e}", retryable=False
+            ) from e
+        except _TRANSIENT_ERRORS as e:
+            raise ProviderError(
+                f"Transient error from {model}: {e}", retryable=True
+            ) from e
+        except Exception as e:
+            raise ProviderError(
+                f"Unexpected error from {model}: {e}", retryable=False
+            ) from e
 
         for chunk in response:
             if not chunk.choices:

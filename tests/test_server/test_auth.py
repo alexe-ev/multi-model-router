@@ -1,5 +1,6 @@
 """Tests for REST API auth middleware."""
 
+import hmac
 import os
 from unittest.mock import patch
 
@@ -123,3 +124,14 @@ class TestAuthEnabled:
                     json={"messages": [{"role": "user", "content": "hi"}]},
                 )
                 assert resp.status_code == 401
+
+    def test_uses_constant_time_comparison(self, app):
+        """Verify auth uses hmac.compare_digest for timing-attack resistance."""
+        with patch.dict(os.environ, {"MMROUTER_API_KEY": "secret-key-123"}):
+            with patch("mmrouter.server.auth.hmac.compare_digest", wraps=hmac.compare_digest) as mock_cmp:
+                with TestClient(app) as client:
+                    client.get(
+                        "/v1/models",
+                        headers={"Authorization": "Bearer secret-key-123"},
+                    )
+                    mock_cmp.assert_called_once_with("secret-key-123", "secret-key-123")
