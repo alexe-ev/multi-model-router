@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from enum import StrEnum
+from typing import Iterator
 
 from pydantic import BaseModel, Field
 
@@ -43,6 +44,19 @@ class StreamChunk(BaseModel):
     content: str
     model: str
     finish_reason: str | None = None
+
+
+class StreamRouteResult(BaseModel):
+    """Result from route_messages_stream: classification + model selection + chunk iterator."""
+
+    classification: ClassificationResult
+    model: str
+    fallback_used: bool = False
+    escalated: bool = False
+    budget_downgraded: bool = False
+    chunks: Iterator[StreamChunk] = None  # type: ignore[assignment]
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class RequestLog(BaseModel):

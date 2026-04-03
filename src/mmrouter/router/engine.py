@@ -26,6 +26,7 @@ from mmrouter.models import (
     RequestLog,
     RoutingConfig,
     StreamChunk,
+    StreamRouteResult,
 )
 from mmrouter.providers.base import ProviderBase, _extract_last_user_message
 from mmrouter.providers.litellm_provider import LiteLLMProvider, ProviderError
@@ -473,8 +474,8 @@ class Router:
 
     def route_messages_stream(
         self, messages: list[dict], **kwargs
-    ) -> tuple[ClassificationResult, str, bool, bool, bool, Iterator[StreamChunk]]:
-        """Stream version: returns (classification, model_name, fallback_used, escalated, budget_downgraded, chunk_iterator).
+    ) -> StreamRouteResult:
+        """Stream version: returns StreamRouteResult with classification, model, and chunk iterator.
 
         Classification and model selection happen immediately.
         The actual LLM call is lazy via the iterator.
@@ -524,7 +525,14 @@ class Router:
 
             fallback_used = i > 0
             chunks = self._provider.stream_messages(messages, model, **kwargs)
-            return classification, model, fallback_used, escalated, budget_downgraded, chunks
+            return StreamRouteResult(
+                classification=classification,
+                model=model,
+                fallback_used=fallback_used,
+                escalated=escalated,
+                budget_downgraded=budget_downgraded,
+                chunks=chunks,
+            )
 
         raise RuntimeError(
             f"All models failed for {classification.complexity}/{classification.category}. "
@@ -569,6 +577,14 @@ class Router:
         status = self._alert_manager.get_status()
         status["enabled"] = True
         return status
+
+    def passthrough_messages(self, messages: list[dict], model: str, **kwargs) -> CompletionResult:
+        """Call provider directly, bypassing classification and routing."""
+        return self._provider.complete_messages(messages, model, **kwargs)
+
+    def passthrough_messages_stream(self, messages: list[dict], model: str, **kwargs) -> Iterator[StreamChunk]:
+        """Stream from provider directly, bypassing classification and routing."""
+        return self._provider.stream_messages(messages, model, **kwargs)
 
     @property
     def experiment_store(self) -> ExperimentStore:
