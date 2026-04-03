@@ -93,3 +93,11 @@ adaptive:
   decay_days: 30
   penalty_threshold: 0.4
   boost_threshold: 0.8
+
+alerts:
+  enabled: false
+  cooldown_seconds: 300
+  rules:
+    - cost_spike
+    - error_rate
+    - budget_warning
