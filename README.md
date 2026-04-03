@@ -71,7 +71,7 @@ Prompt -> Classifier -> Router Engine -> Provider (LiteLLM) -> Response
 
 | Strategy | Accuracy | Cost | Speed | Notes |
 |----------|----------|------|-------|-------|
-| Rules | 67% overall (78% complexity, 83% category) | Free | <1ms | Pattern matching heuristics. No dependencies. |
+| Rules | 78% overall (90% complexity, 85% category) | Free | <1ms | Pattern matching heuristics. No dependencies. |
 | Embeddings | 78% overall (84% complexity, 90% category) | Free | ~50ms | kNN on sentence-transformers (MiniLM-L6-v2). Needs `pip install mmrouter[embeddings]`. |
 | LLM | Not yet benchmarked | API cost per request | ~1s | Uses a cheap model (Haiku) to classify before routing. Requires API key. |
 
@@ -360,7 +360,7 @@ src/mmrouter/
 configs/               # YAML routing configs (default, cascade, budget, multi-provider)
 eval_data/             # Labeled test queries for eval
 dashboard/             # React + Vite + Recharts SPA
-tests/                 # 481 tests (pytest)
+tests/                 # 501 tests (pytest)
 ```
 
 ## Stack
@@ -371,7 +371,7 @@ tests/                 # 481 tests (pytest)
 - SQLite with WAL mode for request/cost/feedback/experiment tracking
 - React + Vite + Recharts for the dashboard
 - strictyaml for config parsing
-- pytest (481 tests)
+- pytest (501 tests)
 
 ## Running tests
 
