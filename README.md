@@ -360,7 +360,7 @@ src/mmrouter/
 configs/               # YAML routing configs (default, cascade, budget, multi-provider)
 eval_data/             # Labeled test queries for eval
 dashboard/             # React + Vite + Recharts SPA
-tests/                 # 471 tests (pytest)
+tests/                 # 481 tests (pytest)
 ```
 
 ## Stack
@@ -371,7 +371,7 @@ tests/                 # 471 tests (pytest)
 - SQLite with WAL mode for request/cost/feedback/experiment tracking
 - React + Vite + Recharts for the dashboard
 - strictyaml for config parsing
-- pytest (471 tests)
+- pytest (481 tests)
 
 ## Running tests
 
