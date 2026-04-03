@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 
 from mmrouter.models import AdaptiveConfig
@@ -12,16 +13,27 @@ class FeedbackScorer:
     """Computes per-model success rates per (complexity, category) bucket
     and reranks the fallback chain accordingly."""
 
-    def __init__(self, conn: sqlite3.Connection, config: AdaptiveConfig):
+    def __init__(self, conn: sqlite3.Connection, config: AdaptiveConfig, *, cache_ttl: float | None = None):
         self._conn = conn
         self._config = config
+        self._cache_ttl = cache_ttl if cache_ttl is not None else config.cache_ttl
+        self._cache: dict[tuple[str, str], dict[str, float]] = {}
+        self._cache_times: dict[tuple[str, str], float] = {}
 
     def get_model_scores(self, complexity: str, category: str) -> dict[str, float]:
         """Return {model_name: success_rate} for the given bucket.
 
         Only includes models with >= min_feedback_count ratings.
         Only considers feedback from last decay_days.
+        Results are cached with a TTL to avoid per-request DB queries.
         """
+        now = time.monotonic()
+        cache_key = (complexity, category)
+        cached_at = self._cache_times.get(cache_key, 0.0)
+
+        if now - cached_at < self._cache_ttl and cache_key in self._cache:
+            return self._cache[cache_key]
+
         cutoff = (
             datetime.now(timezone.utc) - timedelta(days=self._config.decay_days)
         ).isoformat()
@@ -48,6 +60,8 @@ class FeedbackScorer:
             if total >= self._config.min_feedback_count:
                 scores[model] = positive / total if total > 0 else 0.0
 
+        self._cache[cache_key] = scores
+        self._cache_times[cache_key] = now
         return scores
 
     def rerank_models(
