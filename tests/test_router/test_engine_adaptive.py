@@ -100,6 +100,7 @@ adaptive:
   decay_days: 30
   penalty_threshold: 0.4
   boost_threshold: 0.8
+  cache_ttl: 0
 """)
     return cfg
 
