@@ -1,0 +1,69 @@
+version: "1"
+routes:
+  simple:
+    factual:
+      model: gpt-4o-mini
+      fallbacks:
+        - gpt-4o
+    reasoning:
+      model: gpt-4o-mini
+      fallbacks:
+        - gpt-4o
+    creative:
+      model: gpt-4o-mini
+      fallbacks:
+        - gpt-4o
+    code:
+      model: gpt-4o-mini
+      fallbacks:
+        - gpt-4o
+  medium:
+    factual:
+      model: gpt-4o
+      fallbacks:
+        - gpt-4o-mini
+    reasoning:
+      model: gpt-4o
+      fallbacks:
+        - gpt-4o-mini
+    creative:
+      model: gpt-4o
+      fallbacks:
+        - gpt-4o-mini
+    code:
+      model: gpt-4o
+      fallbacks:
+        - gpt-4o-mini
+  complex:
+    factual:
+      model: gpt-4o
+      fallbacks:
+        - gpt-4o-mini
+    reasoning:
+      model: gpt-4o
+      fallbacks:
+        - gpt-4o-mini
+    creative:
+      model: gpt-4o
+      fallbacks:
+        - gpt-4o-mini
+    code:
+      model: gpt-4o
+      fallbacks:
+        - gpt-4o-mini
+classifier:
+  strategy: rules
+  threshold: "0.7"
+provider:
+  timeout_ms: 30000
+  max_retries: 1
+  circuit_breaker_threshold: 3
+  circuit_breaker_reset_ms: 60000
+cascade:
+  enabled: false
+budget:
+  enabled: false
+adaptive:
+  enabled: false
+alerts:
+  enabled: false
