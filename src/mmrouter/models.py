@@ -93,6 +93,7 @@ class AdaptiveConfig(BaseModel):
     decay_days: int = 30
     penalty_threshold: float = 0.4
     boost_threshold: float = 0.8
+    cache_ttl: float = 1.0
 
 
 class BudgetConfig(BaseModel):

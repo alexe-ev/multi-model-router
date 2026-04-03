@@ -74,6 +74,7 @@ _adaptive_schema = sy.Map({
     sy.Optional("decay_days"): sy.Int(),
     sy.Optional("penalty_threshold"): sy.Float(),
     sy.Optional("boost_threshold"): sy.Float(),
+    sy.Optional("cache_ttl"): sy.Float(),
 })
 
 _alerts_schema = sy.Map({
@@ -202,6 +203,8 @@ def load_config(path: str | Path) -> RoutingConfig:
             adaptive_kwargs["penalty_threshold"] = float(adp_data["penalty_threshold"])
         if "boost_threshold" in adp_data:
             adaptive_kwargs["boost_threshold"] = float(adp_data["boost_threshold"])
+        if "cache_ttl" in adp_data:
+            adaptive_kwargs["cache_ttl"] = float(adp_data["cache_ttl"])
         adaptive = AdaptiveConfig(**adaptive_kwargs)
 
     alerts = AlertsConfig()

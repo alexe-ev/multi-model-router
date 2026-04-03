@@ -1,7 +1,9 @@
-"""Tests for FeedbackScorer: scoring, reranking, thresholds, decay."""
+"""Tests for FeedbackScorer: scoring, reranking, thresholds, decay, caching."""
 
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -291,4 +293,65 @@ class TestRerankModels:
         )
         assert result == ["model-a"]
         assert not reranked  # single model, can't reorder
+        tracker.close()
+
+
+class TestFeedbackScorerCache:
+    def test_cache_returns_same_result_within_ttl(self, tmp_path):
+        tracker, conn = _setup_db(tmp_path)
+        for _ in range(5):
+            rid = _insert_request(conn, "model-a")
+            _insert_feedback(conn, rid, 1)
+
+        scorer = FeedbackScorer(conn, AdaptiveConfig(min_feedback_count=5), cache_ttl=1.0)
+        scores1 = scorer.get_model_scores("simple", "factual")
+
+        # Add more feedback (negative this time)
+        for _ in range(5):
+            rid = _insert_request(conn, "model-a")
+            _insert_feedback(conn, rid, -1)
+
+        # Within TTL: should return cached result (still 1.0)
+        scores2 = scorer.get_model_scores("simple", "factual")
+        assert scores2["model-a"] == 1.0
+        assert scores1 is scores2  # same dict object from cache
+        tracker.close()
+
+    def test_cache_refreshes_after_ttl(self, tmp_path):
+        tracker, conn = _setup_db(tmp_path)
+        for _ in range(5):
+            rid = _insert_request(conn, "model-a")
+            _insert_feedback(conn, rid, 1)
+
+        scorer = FeedbackScorer(conn, AdaptiveConfig(min_feedback_count=5), cache_ttl=0.05)
+        scores1 = scorer.get_model_scores("simple", "factual")
+        assert scores1["model-a"] == 1.0
+
+        # Add negative feedback
+        for _ in range(5):
+            rid = _insert_request(conn, "model-a")
+            _insert_feedback(conn, rid, -1)
+
+        # Wait for TTL to expire
+        time.sleep(0.06)
+
+        scores2 = scorer.get_model_scores("simple", "factual")
+        assert scores2["model-a"] == pytest.approx(0.5)  # 5 pos + 5 neg = 50%
+        tracker.close()
+
+    def test_cache_scoped_to_bucket(self, tmp_path):
+        tracker, conn = _setup_db(tmp_path)
+        for _ in range(5):
+            rid = _insert_request(conn, "model-a", "simple", "factual")
+            _insert_feedback(conn, rid, 1)
+        for _ in range(5):
+            rid = _insert_request(conn, "model-a", "medium", "reasoning")
+            _insert_feedback(conn, rid, -1)
+
+        scorer = FeedbackScorer(conn, AdaptiveConfig(min_feedback_count=5), cache_ttl=10.0)
+        simple = scorer.get_model_scores("simple", "factual")
+        medium = scorer.get_model_scores("medium", "reasoning")
+
+        assert simple["model-a"] == 1.0
+        assert medium["model-a"] == 0.0
         tracker.close()
