@@ -505,12 +505,10 @@ class TestBudgetRouterIntegration:
         classifier = MockClassifier(Complexity.COMPLEX, Category.REASONING)
         router = Router(cfg, classifier=classifier, provider=provider, tracker=tracker)
         messages = [{"role": "user", "content": "test"}]
-        classification, model, fallback_used, escalated, budget_downgraded, chunks = (
-            router.route_messages_stream(messages)
-        )
-        assert budget_downgraded
-        assert "sonnet" in model.lower()
-        list(chunks)
+        result = router.route_messages_stream(messages)
+        assert result.budget_downgraded
+        assert "sonnet" in result.model.lower()
+        list(result.chunks)
         router.close()
 
     def test_budget_get_status(self, tmp_path):

@@ -204,16 +204,14 @@ class TestRouteMessagesStream:
         )
 
         messages = [{"role": "user", "content": "What is 2+2?"}]
-        classification, model, fallback_used, escalated, budget_downgraded, chunks = (
-            router.route_messages_stream(messages)
-        )
+        result = router.route_messages_stream(messages)
 
-        assert classification.complexity == Complexity.SIMPLE
-        assert "haiku" in model.lower()
-        assert not fallback_used
-        assert not escalated
+        assert result.classification.complexity == Complexity.SIMPLE
+        assert "haiku" in result.model.lower()
+        assert not result.fallback_used
+        assert not result.escalated
 
-        chunk_list = list(chunks)
+        chunk_list = list(result.chunks)
         assert len(chunk_list) == 2
         assert chunk_list[0].content == "Hello "
         assert chunk_list[1].finish_reason == "stop"
@@ -231,13 +229,11 @@ class TestRouteMessagesStream:
         )
 
         messages = [{"role": "user", "content": "test"}]
-        classification, model, fallback_used, escalated, budget_downgraded, chunks = (
-            router.route_messages_stream(messages)
-        )
+        result = router.route_messages_stream(messages)
 
-        assert escalated is True
-        assert "sonnet" in model.lower()
-        list(chunks)  # consume
+        assert result.escalated is True
+        assert "sonnet" in result.model.lower()
+        list(result.chunks)  # consume
         router.close()
 
     def test_stream_error_raised_during_iteration(self, tmp_path):
@@ -255,10 +251,8 @@ class TestRouteMessagesStream:
         messages = [{"role": "user", "content": "What is 2+2?"}]
         # route_messages_stream returns immediately (generator is lazy).
         # The model selected is haiku (first in list), but error surfaces during iteration.
-        classification, model, fallback_used, escalated, budget_downgraded, chunks = (
-            router.route_messages_stream(messages)
-        )
-        assert "haiku" in model.lower()
+        result = router.route_messages_stream(messages)
+        assert "haiku" in result.model.lower()
         with pytest.raises(ProviderError):
-            list(chunks)
+            list(result.chunks)
         router.close()
