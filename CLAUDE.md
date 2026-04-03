@@ -14,7 +14,7 @@ Multi-Model Router: intelligent LLM request routing system. Classifier analyzes 
 - SQLite + WAL mode (request/cost/feedback/experiment logging)
 - React + Vite + Recharts (dashboard SPA)
 - strictyaml (config parsing)
-- pytest (471 tests)
+- pytest (481 tests)
 
 ## Structure
 
