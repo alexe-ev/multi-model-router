@@ -166,7 +166,7 @@ def create_app(
                 )
             else:
                 # Explicit model: bypass routing, call provider directly
-                completion = router._provider.complete_messages(
+                completion = router.passthrough_messages(
                     messages, body.model, **provider_kwargs
                 )
 
@@ -204,20 +204,20 @@ def create_app(
     ):
         try:
             if body.model == "auto" or not body.model:
-                classification, model, fallback_used, escalated, budget_downgraded, chunks = (
-                    router.route_messages_stream(messages, **provider_kwargs)
-                )
+                result = router.route_messages_stream(messages, **provider_kwargs)
+                chunks = result.chunks
+                model = result.model
                 extra_headers = {
-                    "X-MMRouter-Complexity": classification.complexity.value,
-                    "X-MMRouter-Category": classification.category.value,
-                    "X-MMRouter-Confidence": str(classification.confidence),
-                    "X-MMRouter-Model": model,
-                    "X-MMRouter-Fallback": str(fallback_used).lower(),
-                    "X-MMRouter-Escalated": str(escalated).lower(),
-                    "X-MMRouter-Budget-Downgraded": str(budget_downgraded).lower(),
+                    "X-MMRouter-Complexity": result.classification.complexity.value,
+                    "X-MMRouter-Category": result.classification.category.value,
+                    "X-MMRouter-Confidence": str(result.classification.confidence),
+                    "X-MMRouter-Model": result.model,
+                    "X-MMRouter-Fallback": str(result.fallback_used).lower(),
+                    "X-MMRouter-Escalated": str(result.escalated).lower(),
+                    "X-MMRouter-Budget-Downgraded": str(result.budget_downgraded).lower(),
                 }
             else:
-                chunks = router._provider.stream_messages(
+                chunks = router.passthrough_messages_stream(
                     messages, body.model, **provider_kwargs
                 )
                 model = body.model
