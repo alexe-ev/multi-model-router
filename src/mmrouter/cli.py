@@ -9,6 +9,41 @@ import click
 from mmrouter import __version__
 
 
+def _format_error(e: Exception) -> str:
+    """Return a human-friendly error message with actionable hints."""
+    msg = str(e)
+    if "AuthenticationError" in msg:
+        if "ANTHROPIC" in msg or "anthropic" in msg:
+            return (
+                f"{msg}\n"
+                "Hint: set your API key with:\n"
+                "  export ANTHROPIC_API_KEY=<your-key>\n"
+                "Get a key at: https://console.anthropic.com/"
+            )
+        if "OPENAI" in msg or "openai" in msg:
+            return (
+                f"{msg}\n"
+                "Hint: set your API key with:\n"
+                "  export OPENAI_API_KEY=<your-key>\n"
+                "Get a key at: https://platform.openai.com/api-keys"
+            )
+        if "GOOGLE" in msg or "google" in msg or "GEMINI" in msg or "gemini" in msg:
+            return (
+                f"{msg}\n"
+                "Hint: set your API key with:\n"
+                "  export GOOGLE_API_KEY=<your-key>\n"
+                "Get a key at: https://aistudio.google.com/apikey"
+            )
+        return (
+            f"{msg}\n"
+            "Hint: check that your provider API key is set as an environment variable.\n"
+            "Run: mmrouter init  to set up a config with the right key name."
+        )
+    if "Config file not found" in msg:
+        return f"{msg}\nHint: run: mmrouter init"
+    return msg
+
+
 @click.group()
 @click.version_option(__version__, prog_name="mmrouter")
 @click.option("--config", "-c", default="configs/default.yaml", help="Path to routing config YAML.")
@@ -17,6 +52,70 @@ def cli(ctx, config):
     """mmrouter: intelligent LLM request routing."""
     ctx.ensure_object(dict)
     ctx.obj["config"] = config
+
+
+@cli.command()
+@click.option("--provider", type=click.Choice(["anthropic", "openai", "google"]))
+@click.option("--output", default="configs/default.yaml", help="Output config path.")
+def init(provider, output):
+    """Set up mmrouter: choose provider, generate config, verify setup."""
+    from mmrouter.init import PROVIDER_PRESETS, check_api_key, generate_config
+
+    if not provider:
+        provider = click.prompt(
+            "Choose a provider",
+            type=click.Choice(["anthropic", "openai", "google"]),
+        )
+
+    preset = PROVIDER_PRESETS[provider]
+    env_var, key_is_set = check_api_key(provider)
+
+    if key_is_set:
+        click.secho(f"API key: {env_var} is set", fg="green")
+    else:
+        click.secho(f"API key: {env_var} is not set", fg="yellow")
+        click.secho(
+            f"  export {env_var}=<your-key>",
+            fg="yellow",
+        )
+        click.secho(
+            f"  Get a key at: {preset['key_url']}",
+            fg="yellow",
+        )
+
+    config_yaml = generate_config(provider)
+
+    output_path = Path(output)
+    if output_path.exists():
+        if not click.confirm(f"Config file {output} already exists. Overwrite?"):
+            click.secho("Aborted. Config not written.", fg="red")
+            return
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(config_yaml)
+
+    from mmrouter.classifier.rules import RuleClassifier
+    classifier = RuleClassifier()
+    test_prompt = "What is the capital of France?"
+    result = classifier.classify(test_prompt)
+    click.secho(
+        f"Classifier check: '{test_prompt}' -> {result.complexity}/{result.category}",
+        fg="bright_black",
+    )
+
+    if key_is_set:
+        click.secho(
+            f"Config saved to {output}. Run: mmrouter route 'your prompt'",
+            fg="green",
+        )
+    else:
+        click.secho(
+            f"Config saved to {output}.",
+            fg="green",
+        )
+        click.echo(
+            f"Set {env_var} and then run: mmrouter route 'your prompt'"
+        )
 
 
 @cli.command()
@@ -32,7 +131,7 @@ def route(ctx, prompt, verbose, db):
         router = Router(ctx.obj["config"], db_path=db)
         result = router.route(prompt)
     except Exception as e:
-        click.secho(f"Error: {e}", fg="red", err=True)
+        click.secho(f"Error: {_format_error(e)}", fg="red", err=True)
         sys.exit(1)
 
     click.echo(result.completion.content)
@@ -533,7 +632,7 @@ def quality(ctx, dataset, judge_model, baseline_model, sample, db):
         router = Router(ctx.obj["config"], db_path=db)
         provider = LiteLLMProvider()
     except Exception as e:
-        click.secho(f"Error initializing: {e}", fg="red", err=True)
+        click.secho(f"Error initializing: {_format_error(e)}", fg="red", err=True)
         sys.exit(1)
 
     router_responses = []
@@ -564,7 +663,7 @@ def quality(ctx, dataset, judge_model, baseline_model, sample, db):
     try:
         result = compare_quality(provider, judge_model, router_responses, baseline_responses)
     except ProviderError as e:
-        click.secho(f"Judge error: {e}", fg="red", err=True)
+        click.secho(f"Judge error: {_format_error(e)}", fg="red", err=True)
         sys.exit(1)
 
     rr = result["router"]
@@ -606,7 +705,7 @@ def feedback(request_id, direction, db):
         tracker.submit_feedback(request_id, rating)
         tracker.close()
     except ValueError as e:
-        click.secho(f"Error: {e}", fg="red", err=True)
+        click.secho(f"Error: {_format_error(e)}", fg="red", err=True)
         sys.exit(1)
 
     click.secho(f"Feedback submitted: request {request_id} = {direction}", fg="green")
