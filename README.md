@@ -1,5 +1,7 @@
 # mmrouter
 
+![mmrouter](assets/multi-model-router.png)
+
 Intelligent LLM request routing. A classifier analyzes each prompt and routes it to the right model: simple queries go to cheap/fast models (Haiku), complex reasoning goes to powerful ones (Opus), everything else to the balanced middle (Sonnet).
 
 This is product-driven routing, not a "user picks a model" proxy. The system decides which model fits the task.

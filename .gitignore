@@ -45,6 +45,12 @@ coverage.xml
 
 # Claude Code
 .claude/
+CLAUDE.md
+
+# Internal docs (not for public repo)
+PLAN.md
+decisions/
+research/
 
 # Sentence transformers cache
 .model_cache/
