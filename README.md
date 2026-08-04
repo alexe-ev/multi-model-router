@@ -73,9 +73,11 @@ Prompt -> Classifier -> Router Engine -> Provider (LiteLLM) -> Response
 
 | Strategy | Accuracy | Cost | Speed | Notes |
 |----------|----------|------|-------|-------|
-| Rules | 78% overall (90% complexity, 85% category) | Free | <1ms | Pattern matching heuristics. No dependencies. |
 | Embeddings | 78% overall (84% complexity, 90% category) | Free | ~50ms | kNN on sentence-transformers (MiniLM-L6-v2). Needs `pip install mmrouter[embeddings]`. |
+| Rules | 67% overall (78% complexity, 83% category) | Free | <1ms | Pattern matching heuristics. No dependencies. |
 | LLM | Not yet benchmarked | API cost per request | ~1s | Uses a cheap model (Haiku) to classify before routing. Requires API key. |
+
+Accuracy figures come from `mmrouter eval` on the bundled eval set (120 labeled queries); reproduce with `mmrouter compare`.
 
 The embedding classifier is the best default for production. Rules work fine for development and testing. Custom training on your own data is supported via `mmrouter train`.
 
@@ -397,6 +399,10 @@ pytest tests/test_server/           # REST API tests only
 - LiteLLM is isolated behind `ProviderBase`. Never imported outside `providers/`.
 - Model names live in YAML config. Never hardcoded in routing logic.
 - All LLM calls go through the Router. No direct provider calls from outside `router/`.
+
+## Where this sits
+
+Part of [the layer underneath AI products](https://github.com/alexe-ev): model **economics** ([ai-economics](https://github.com/alexe-ev/ai-economics)) → **evals** ([ai-ab-testing-tool](https://github.com/alexe-ev/ai-ab-testing-tool)) → **routing** (this repo) → **business impact** ([ml-impact-calculator](https://github.com/alexe-ev/ml-impact-calculator)). Built by the maker of [Whisperly](https://whisperly.io).
 
 ## License
 
