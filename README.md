@@ -325,6 +325,8 @@ mmrouter dashboard --port 8000
 # Starts FastAPI backend + serves React SPA at http://localhost:8000
 ```
 
+![mmrouter dashboard: requests, cost, savings, latency, model distribution and request log](assets/dashboard.png)
+
 ## Key features
 
 ### Multi-provider failover
