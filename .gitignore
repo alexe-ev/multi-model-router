@@ -58,3 +58,7 @@ research/
 # Source docs (not part of the project)
 *.docx
 initiatlization copy.md
+
+# Gatun OS (knowledge layer + layer docs, internal)
+.gatun/
+docs/
