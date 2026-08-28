@@ -3,6 +3,7 @@ import KPICards from './components/KPICards'
 import CostChart from './components/CostChart'
 import ModelDistribution from './components/ModelDistribution'
 import RequestLog from './components/RequestLog'
+import AlertPanel from './components/AlertPanel'
 
 interface Stats {
   total_requests: number
@@ -40,18 +41,26 @@ export default function App() {
       .catch(e => setError(e.message))
   }, [])
 
-  if (error) return <div className="dashboard"><div className="error">Error: {error}</div></div>
-  if (!stats) return <div className="dashboard"><div className="loading">Loading...</div></div>
-
   return (
     <div className="dashboard">
       <h1>mmrouter dashboard</h1>
-      <KPICards stats={stats} />
-      <div className="charts-grid">
-        <CostChart data={daily} />
-        <ModelDistribution data={models} />
-      </div>
-      <RequestLog />
+      {error ? (
+        <div className="error">Error: {error}</div>
+      ) : !stats ? (
+        <div className="loading">Loading...</div>
+      ) : (
+        <KPICards stats={stats} />
+      )}
+      <AlertPanel />
+      {stats && (
+        <>
+          <div className="charts-grid">
+            <CostChart data={daily} />
+            <ModelDistribution data={models} />
+          </div>
+          <RequestLog />
+        </>
+      )}
     </div>
   )
 }

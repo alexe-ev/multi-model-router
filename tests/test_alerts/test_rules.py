@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from mmrouter.alerts.channels import Alert
+from mmrouter.alerts.store import AlertIncidentStore
 from mmrouter.alerts.rules import (
     BUILTIN_RULES,
     AlertManager,
@@ -276,3 +277,120 @@ class TestAlertManager:
         assert mgr.last_fired("lf_test") is None
         mgr.check_all()
         assert mgr.last_fired("lf_test") is not None
+
+
+def _incidents(conn):
+    """Read the incident history the manager wrote."""
+    return AlertIncidentStore(conn).list_incidents()
+
+
+def _age_incident(conn, rule_name, seconds):
+    """Push a live incident's last_seen back, instead of sleeping."""
+    old = (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+    conn.execute(
+        "UPDATE alert_incidents SET last_seen = ? "
+        "WHERE rule_name = ? AND cleared_at IS NULL",
+        (old, rule_name),
+    )
+    conn.commit()
+
+
+class TestAlertManagerHistory:
+    def _firing_rule(self, name="historic", cooldown=0):
+        def always_fire(conn):
+            return Alert(
+                rule_name=name,
+                message="fired",
+                severity="warning",
+                details={"n": 1},
+            )
+
+        return AlertRule(name=name, check=always_fire, cooldown_seconds=cooldown)
+
+    def test_fire_writes_an_incident(self, db):
+        mgr = AlertManager(db, rules=[self._firing_rule()])
+        mgr.check_all()
+
+        items = _incidents(db)
+        assert len(items) == 1
+        assert items[0]["rule_name"] == "historic"
+        assert items[0]["fire_count"] == 1
+        assert items[0]["cleared_at"] is None
+
+    def test_second_fire_extends_instead_of_adding_a_row(self, db):
+        mgr = AlertManager(db, rules=[self._firing_rule()])
+        mgr.check_all()
+        mgr.check_all()
+
+        items = _incidents(db)
+        assert len(items) == 1
+        assert items[0]["fire_count"] == 2
+
+    def test_silent_evaluation_clears_only_after_the_grace(self, db):
+        mgr = AlertManager(db, rules=[self._firing_rule()])
+        mgr.check_all()
+
+        # A second observer, whose rule carries a real 300s cooldown: its silence
+        # inside that window is not evidence the condition ended.
+        silent = AlertRule(name="historic", check=lambda conn: None, cooldown_seconds=300)
+        other = AlertManager(db, rules=[silent])
+
+        other.check_all()
+        assert _incidents(db)[0]["cleared_at"] is None
+
+        _age_incident(db, "historic", 601)
+        other.check_all()
+        assert _incidents(db)[0]["cleared_at"] is not None
+
+    def test_cooldown_skip_records_nothing(self, db):
+        mgr = AlertManager(db, rules=[self._firing_rule(cooldown=9999)])
+        mgr.check_all()
+        before = _incidents(db)
+
+        assert mgr.check_all() == []  # skipped by cooldown, never evaluated
+        after = _incidents(db)
+
+        assert after == before
+        assert after[0]["fire_count"] == 1
+        assert after[0]["cleared_at"] is None
+
+    def test_history_failure_does_not_cost_a_delivery(self, db, monkeypatch):
+        def boom(self, alert):
+            raise sqlite3.OperationalError("database is locked")
+
+        monkeypatch.setattr(AlertIncidentStore, "record_fire", boom)
+
+        mgr = AlertManager(
+            db, rules=[self._firing_rule()], webhook_url="http://example.com/hook"
+        )
+        mgr._log_channel.send = MagicMock()
+        mgr._webhook.send = MagicMock(return_value=True)
+
+        fired = mgr.check_all()
+
+        assert len(fired) == 1
+        mgr._log_channel.send.assert_called_once()
+        mgr._webhook.send.assert_called_once()
+
+    def test_failed_ddl_still_fires_and_re_arms_on_the_next_fire(self, db, monkeypatch):
+        real_init = AlertIncidentStore.__init__
+        calls = {"n": 0}
+
+        def flaky_init(self, conn):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise sqlite3.OperationalError("database is locked")
+            real_init(self, conn)
+
+        monkeypatch.setattr(AlertIncidentStore, "__init__", flaky_init)
+
+        mgr = AlertManager(db, rules=[self._firing_rule()])
+        assert mgr._store is None
+
+        fired = mgr.check_all()
+
+        assert len(fired) == 1
+        assert mgr._store is not None
+        items = _incidents(db)
+        assert len(items) == 1
+        assert items[0]["fire_count"] == 1

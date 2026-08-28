@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -9,6 +10,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from mmrouter.alerts.channels import Alert, LogChannel, WebhookChannel
+from mmrouter.alerts.store import AlertIncidentStore
+
+logger = logging.getLogger("mmrouter.alerts")
 
 
 def _utc_iso(dt: datetime) -> str:
@@ -173,6 +177,17 @@ class AlertManager:
         self._rules = rules or []
         self._cooldown_override = cooldown_seconds
         self._last_fired: dict[str, float] = {}
+        # History is best-effort from the first statement on. Router.__init__ builds
+        # this manager OUTSIDE any try (engine.py:93-108), so a raise here would take
+        # down routing itself — the one thing alerting is required never to do.
+        self._store: AlertIncidentStore | None = None
+        try:
+            self._store = AlertIncidentStore(conn)
+        except Exception:
+            logger.warning(
+                "Alert history unavailable; alerts will fire but will not be recorded",
+                exc_info=True,
+            )
 
         # Channels
         self._log_channel = LogChannel()
@@ -220,6 +235,9 @@ class AlertManager:
 
             alert = rule.check(self._conn)
             if alert is None:
+                # Evaluated and silent: this closes the live incident, if any.
+                # The rule's own cooldown is the grace window — see store.clear.
+                self._record_clear(rule.name, rule.cooldown_seconds)
                 continue
 
             # Fire
@@ -228,8 +246,43 @@ class AlertManager:
             if self._webhook:
                 self._webhook.send(alert)
             fired.append(alert)
+            # After the channels: history must never cost a delivery.
+            self._record_fire(alert)
 
         return fired
+
+    def _ensure_store(self) -> AlertIncidentStore | None:
+        """Re-arm history if the DDL failed at construction. Called only from the
+        fire path: a transient lock at startup must not disable history for the
+        whole life of a long-running server, but retrying on every silent
+        evaluation would re-run DDL on the steady path."""
+        if self._store is None:
+            try:
+                self._store = AlertIncidentStore(self._conn)
+            except Exception:
+                return None
+        return self._store
+
+    def _record_fire(self, alert: Alert) -> None:
+        store = self._ensure_store()
+        if store is None:
+            return
+        try:
+            store.record_fire(alert)
+        except Exception:
+            logger.warning(
+                "Alert history write failed for rule %s", alert.rule_name, exc_info=True
+            )
+
+    def _record_clear(self, rule_name: str, min_age_seconds: float) -> None:
+        if self._store is None:
+            return
+        try:
+            self._store.clear(rule_name, min_age_seconds)
+        except Exception:
+            logger.warning(
+                "Alert history clear failed for rule %s", rule_name, exc_info=True
+            )
 
     def get_status(self) -> dict:
         """Status for CLI display."""

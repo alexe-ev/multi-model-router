@@ -1,10 +1,18 @@
 from __future__ import annotations
+import logging
 import sqlite3
+import threading
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from mmrouter.alerts.store import AlertIncidentStore
 from mmrouter.tracker.logger import Tracker, _CREATE_TABLE, _CREATE_FEEDBACK_TABLE
 from mmrouter.tracker.analytics import CostAnalytics
+
+
+class HandledUpdate(BaseModel):
+    handled: bool
 
 
 def _open_conn(db_path: str) -> sqlite3.Connection:
@@ -24,6 +32,20 @@ def create_app(db_path: str = "mmrouter.db") -> FastAPI:
     tracker._db_path = str(db_path)
     tracker._conn = conn
     analytics = CostAnalytics(conn)
+    # Creates alert_incidents if the DB predates it, so an upgraded DB reads empty
+    # instead of erroring. Same job _open_conn does for requests/feedback.
+    # Guarded: the six existing read endpoints must keep working for an operator
+    # who never enabled alerting, even if this DDL cannot run.
+    try:
+        alert_store: AlertIncidentStore | None = AlertIncidentStore(conn)
+    except Exception:
+        logging.getLogger("mmrouter.dashboard").warning(
+            "alert_incidents unavailable; the alerts endpoints will return 503",
+            exc_info=True,
+        )
+        alert_store = None
+    # One shared connection across FastAPI's thread pool; writes are serialised.
+    write_lock = threading.Lock()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -98,6 +120,48 @@ def create_app(db_path: str = "mmrouter.db") -> FastAPI:
     @app.get("/api/stats/feedback")
     def get_feedback_stats():
         return tracker.get_feedback_stats()
+
+    def _require_alert_store() -> AlertIncidentStore:
+        if alert_store is None:
+            raise HTTPException(
+                status_code=503, detail="Alert history is unavailable on this database"
+            )
+        return alert_store
+
+    @app.get("/api/alerts")
+    def get_alerts(limit: int = Query(200, ge=1, le=500)):
+        store = _require_alert_store()
+        return {
+            "items": store.list_incidents(limit=limit),
+            **store.counts(),
+            "limit": limit,
+        }
+
+    @app.post("/api/alerts/{incident_id}/handled")
+    def set_alert_handled(incident_id: int, body: HandledUpdate):
+        store = _require_alert_store()
+        try:
+            with write_lock:
+                item = store.set_handled(incident_id, body.handled)
+        except OverflowError:
+            # Past SQLite's INTEGER range: no row can carry this id.
+            item = None
+        except sqlite3.Error:
+            # Locked or unwritable database. Same answer the read path gives when
+            # the store cannot serve, and it names no path, SQL or stack.
+            # The client gets none of the detail, so the log has to carry it.
+            logging.getLogger("mmrouter.dashboard").warning(
+                "Alert history write failed for incident %s", incident_id, exc_info=True
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Could not write to alert history on this database",
+            ) from None
+        if item is None:
+            raise HTTPException(
+                status_code=404, detail=f"No alert incident with id {incident_id}"
+            )
+        return item
 
     @app.get("/api/models")
     def get_models():
