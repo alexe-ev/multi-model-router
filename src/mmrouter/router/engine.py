@@ -461,6 +461,7 @@ class Router:
                     adaptive_reranked=adaptive_reranked,
                 )
 
+                self._check_alerts()
                 return result
             except ProviderError as e:
                 self._record_failure_and_propagate(model, e.retryable)

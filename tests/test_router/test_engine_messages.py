@@ -256,3 +256,98 @@ class TestRouteMessagesStream:
         with pytest.raises(ProviderError):
             list(result.chunks)
         router.close()
+
+
+class TestRouteMessagesAlerts:
+    """Alerts fire on the non-stream messages path, and never on the stream one."""
+
+    @pytest.fixture(autouse=True)
+    def restore_builtin_cooldown(self):
+        # AlertManager rewrites the cooldown on the shared BUILTIN_RULES instance.
+        from mmrouter.alerts.rules import BUILTIN_RULES
+
+        original = BUILTIN_RULES["error_rate"].cooldown_seconds
+        yield
+        BUILTIN_RULES["error_rate"].cooldown_seconds = original
+
+    def _config(self, tmp_path):
+        cfg = tmp_path / "alerting.yaml"
+        cfg.write_text("""
+version: "1"
+routes:
+  simple:
+    factual:
+      model: claude-haiku-4-5-20251001
+alerts:
+  enabled: true
+  cooldown_seconds: 0
+  rules:
+    - error_rate
+""")
+        return str(cfg)
+
+    def _router(self, tmp_path):
+        """A Router with alerting on, over a tracker already in a firing state."""
+        from mmrouter.tracker.logger import _INSERT
+
+        tracker = Tracker(tmp_path / "alerts.db")
+        conn = tracker.connection
+        for i in range(10):
+            conn.execute(_INSERT, (
+                "2026-04-01T10:00:00", "abc", "simple", "factual", 0.9,
+                "claude-haiku-4-5-20251001", 10, 20, 0.0001, 50.0,
+                1 if i < 2 else 0, 0, 1, 0, 0, None, None,
+            ))
+        conn.commit()
+
+        return Router(
+            self._config(tmp_path),
+            classifier=MockClassifier(Complexity.SIMPLE, Category.FACTUAL),
+            provider=MockProvider(),
+            tracker=tracker,
+        )
+
+    def _incidents(self, tmp_path):
+        import sqlite3
+
+        from mmrouter.alerts.store import AlertIncidentStore
+
+        conn = sqlite3.connect(str(tmp_path / "alerts.db"))
+        try:
+            return AlertIncidentStore(conn).list_incidents()
+        finally:
+            conn.close()
+
+    def test_route_messages_records_an_incident(self, tmp_path):
+        router = self._router(tmp_path)
+        router.route_messages([{"role": "user", "content": "What is 2+2?"}])
+
+        items = self._incidents(tmp_path)
+        assert len(items) == 1
+        assert items[0]["rule_name"] == "error_rate"
+        assert items[0]["fire_count"] == 1
+        router.close()
+
+    def test_route_messages_extends_the_same_incident(self, tmp_path):
+        router = self._router(tmp_path)
+        messages = [{"role": "user", "content": "What is 2+2?"}]
+        router.route_messages(messages)
+        router.route_messages(messages)
+
+        items = self._incidents(tmp_path)
+        assert len(items) == 1
+        assert items[0]["fire_count"] == 2
+        router.close()
+
+    def test_stream_path_records_nothing(self, tmp_path):
+        router = self._router(tmp_path)
+        messages = [{"role": "user", "content": "What is 2+2?"}]
+
+        result = router.route_messages_stream(messages)
+        list(result.chunks)  # consume
+        assert self._incidents(tmp_path) == []
+
+        # Same Router, non-stream request: this one does record.
+        router.route_messages(messages)
+        assert len(self._incidents(tmp_path)) == 1
+        router.close()
