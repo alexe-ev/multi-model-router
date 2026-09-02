@@ -7,7 +7,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from mmrouter.alerts.store import AlertIncidentStore
-from mmrouter.tracker.logger import Tracker, _CREATE_TABLE, _CREATE_FEEDBACK_TABLE
+from mmrouter.tracker.logger import (
+    Tracker,
+    _CREATE_TABLE,
+    _CREATE_FEEDBACK_TABLE,
+    _CREATE_UNRECORDED_STREAMS_TABLE,
+)
 from mmrouter.tracker.analytics import CostAnalytics
 
 
@@ -21,6 +26,7 @@ def _open_conn(db_path: str) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(_CREATE_TABLE)
     conn.execute(_CREATE_FEEDBACK_TABLE)
+    conn.execute(_CREATE_UNRECORDED_STREAMS_TABLE)
     conn.commit()
     return conn
 

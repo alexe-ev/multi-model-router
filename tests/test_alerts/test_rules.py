@@ -376,11 +376,11 @@ class TestAlertManagerHistory:
         real_init = AlertIncidentStore.__init__
         calls = {"n": 0}
 
-        def flaky_init(self, conn):
+        def flaky_init(self, conn, *, lock=None):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise sqlite3.OperationalError("database is locked")
-            real_init(self, conn)
+            real_init(self, conn, lock=lock)
 
         monkeypatch.setattr(AlertIncidentStore, "__init__", flaky_init)
 

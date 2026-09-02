@@ -170,12 +170,14 @@ class TestLiteLLMProviderMessages:
         chunk1.choices[0].delta.content = "Hello "
         chunk1.choices[0].finish_reason = None
         chunk1.model = "claude-haiku"
+        chunk1.usage = None
 
         chunk2 = MagicMock()
         chunk2.choices = [MagicMock()]
         chunk2.choices[0].delta.content = "world!"
         chunk2.choices[0].finish_reason = "stop"
         chunk2.model = "claude-haiku"
+        chunk2.usage = None
 
         mock_litellm.completion.return_value = [chunk1, chunk2]
 

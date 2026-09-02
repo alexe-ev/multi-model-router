@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 from typing import Iterator
 
@@ -27,6 +29,7 @@ from mmrouter.models import (
     RoutingConfig,
     StreamChunk,
     StreamRouteResult,
+    StreamUsage,
 )
 from mmrouter.providers.base import ProviderBase, _extract_last_user_message
 from mmrouter.providers.litellm_provider import LiteLLMProvider, ProviderError
@@ -36,6 +39,8 @@ from mmrouter.router.cascade import QualityGateResult, create_quality_gate
 from mmrouter.router.config import load_config
 from mmrouter.router.fallback import CircuitBreakerRegistry, CircuitOpenError
 from mmrouter.tracker.logger import Tracker
+
+logger = logging.getLogger("mmrouter.router")
 
 _ESCALATION_MAP = {
     Complexity.SIMPLE: Complexity.MEDIUM,
@@ -105,6 +110,7 @@ class Router:
                 rules=alert_rules,
                 webhook_url=self._config.alerts.webhook_url,
                 cooldown_seconds=self._config.alerts.cooldown_seconds,
+                write_lock=self._tracker.write_lock,
             )
 
     def _load_config(self, path: str) -> RoutingConfig:
@@ -481,6 +487,7 @@ class Router:
         Classification and model selection happen immediately.
         The actual LLM call is lazy via the iterator.
         """
+        started = time.perf_counter()
         prompt = _extract_last_user_message(messages)
         classification = self._classifier.classify(prompt)
 
@@ -495,7 +502,11 @@ class Router:
         # Budget enforcement
         budget_downgraded = False
         if self._budget.enabled:
-            new_complexity = self._budget.apply_budget(complexity)
+            try:
+                new_complexity = self._budget.apply_budget(complexity)
+            except BudgetExceededError:
+                self._count_unrecorded(None, "budget_rejected")
+                raise
             if new_complexity != complexity:
                 budget_downgraded = True
                 complexity = new_complexity
@@ -525,7 +536,14 @@ class Router:
                 continue
 
             fallback_used = i > 0
-            chunks = self._provider.stream_messages(messages, model, **kwargs)
+            chunks = self._recorded_stream(
+                self._provider.stream_messages(messages, model, **kwargs),
+                prompt=prompt,
+                classification=classification,
+                model=model,
+                fallback_used=fallback_used,
+                started=started,
+            )
             return StreamRouteResult(
                 classification=classification,
                 model=model,
@@ -539,6 +557,105 @@ class Router:
             f"All models failed for {classification.complexity}/{classification.category}. "
             f"Tried: {models_to_try}. Last error: {last_error}"
         )
+
+    def _recorded_stream(
+        self,
+        chunks: Iterator[StreamChunk],
+        *,
+        prompt: str,
+        classification: ClassificationResult,
+        model: str,
+        fallback_used: bool,
+        started: float,
+    ) -> Iterator[StreamChunk]:
+        """Pass chunks through, then account for the stream exactly once.
+
+        `except Exception` is deliberately narrower than BaseException: a client
+        disconnect arrives as GeneratorExit, which must fall through to `finally`
+        still carrying reason "aborted". The `finally` is what makes every ending
+        countable -- finished, failed and abandoned all reach it. Verified
+        2026-08-28: on a normal end this runs on an AnyIO worker thread, on a
+        disconnect on the MainThread, which is why the tracker's connection is
+        opened with check_same_thread=False.
+
+        One ending it cannot see: a generator closed before its first pull runs
+        no body, so a client that vanishes before the first chunk is not counted.
+        Nothing was spent there either.
+        """
+        reason: str | None = "aborted"
+        try:
+            usage = yield from chunks
+            if usage is None:
+                reason = "no_usage"
+            elif self._log_stream(
+                prompt=prompt,
+                classification=classification,
+                model=model,
+                fallback_used=fallback_used,
+                started=started,
+                usage=usage,
+            ):
+                reason = None
+            else:
+                reason = "log_failed"
+        except ProviderError as e:
+            # mid_stream distinguishes "tokens were generated and billed" from
+            # "the call never opened, nothing was spent". Merging them would make
+            # the counter say a number without saying whether it cost anything.
+            reason = "provider_error" if e.mid_stream else "provider_unavailable"
+            raise
+        except Exception:
+            reason = "provider_error"
+            raise
+        finally:
+            if reason is not None:
+                self._count_unrecorded(model, reason)
+
+    def _log_stream(
+        self,
+        *,
+        prompt: str,
+        classification: ClassificationResult,
+        model: str,
+        fallback_used: bool,
+        started: float,
+        usage: StreamUsage,
+    ) -> bool:
+        """Write the row and evaluate alerts. False means the row did not land."""
+        try:
+            self._tracker.log(RequestLog(
+                prompt_hash=RequestLog.hash_prompt(prompt),
+                classification=classification,
+                model_used=model,
+                completion=CompletionResult(
+                    content="",
+                    model=model,
+                    tokens_in=usage.tokens_in,
+                    tokens_out=usage.tokens_out,
+                    cost=usage.cost,
+                    latency_ms=round((time.perf_counter() - started) * 1000, 1),
+                    cache_read_tokens=usage.cache_read_tokens,
+                    cache_creation_tokens=usage.cache_creation_tokens,
+                ),
+                fallback_used=fallback_used,
+            ))
+        except Exception:
+            logger.warning(
+                "Streamed request for %s could not be logged", model, exc_info=True
+            )
+            return False
+        self._check_alerts()
+        return True
+
+    def _count_unrecorded(self, model: str | None, reason: str) -> None:
+        """Record an unrecorded stream. Failure here must never break routing."""
+        try:
+            self._tracker.record_unrecorded_stream(model, reason)
+        except Exception:
+            logger.warning(
+                "Could not record unrecorded stream (model=%s, reason=%s)",
+                model, reason, exc_info=True,
+            )
 
     def _check_alerts(self) -> None:
         """Evaluate alert rules after a request. Non-blocking: failures are logged, not raised."""

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Iterator
+from typing import Generator
 
-from mmrouter.models import CompletionResult, StreamChunk
+from mmrouter.models import CompletionResult, StreamChunk, StreamUsage
 
 
 class ProviderBase(ABC):
@@ -20,10 +20,24 @@ class ProviderBase(ABC):
         prompt = _extract_last_user_message(messages)
         return self.complete(prompt, model, **kwargs)
 
-    def stream_messages(self, messages: list[dict], model: str, **kwargs) -> Iterator[StreamChunk]:
-        """Stream response chunks for a messages array. Default: yield single chunk from complete."""
+    def stream_messages(
+        self, messages: list[dict], model: str, **kwargs
+    ) -> Generator[StreamChunk, None, StreamUsage | None]:
+        """Stream response chunks for a messages array. Default: yield single chunk from complete.
+
+        The return value (not a yielded value) is the usage the provider reported for
+        this stream, or `None` if it reported none. `None` means "this provider did not
+        report usage for this stream" -- implementations must never invent one.
+        """
         result = self.complete_messages(messages, model, **kwargs)
         yield StreamChunk(content=result.content, model=result.model, finish_reason="stop")
+        return StreamUsage(
+            tokens_in=result.tokens_in,
+            tokens_out=result.tokens_out,
+            cost=result.cost,
+            cache_read_tokens=result.cache_read_tokens,
+            cache_creation_tokens=result.cache_creation_tokens,
+        )
 
 
 def _extract_last_user_message(messages: list[dict]) -> str:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -172,17 +173,24 @@ class AlertManager:
         rules: list[AlertRule] | None = None,
         webhook_url: str | None = None,
         cooldown_seconds: int = 300,
+        write_lock=None,
     ):
         self._conn = conn
         self._rules = rules or []
         self._cooldown_override = cooldown_seconds
         self._last_fired: dict[str, float] = {}
+        self._write_lock = write_lock
+        # AlertManager was single-threaded before this ticket; the streaming path
+        # now runs check_all from a different thread than non-streamed requests
+        # do, so its own in-process state needs its own guard. Never the write
+        # lock, which must not be held across a webhook send.
+        self._state_lock = threading.Lock()
         # History is best-effort from the first statement on. Router.__init__ builds
         # this manager OUTSIDE any try (engine.py:93-108), so a raise here would take
         # down routing itself — the one thing alerting is required never to do.
         self._store: AlertIncidentStore | None = None
         try:
-            self._store = AlertIncidentStore(conn)
+            self._store = AlertIncidentStore(conn, lock=self._write_lock)
         except Exception:
             logger.warning(
                 "Alert history unavailable; alerts will fire but will not be recorded",
@@ -228,7 +236,8 @@ class AlertManager:
         now = time.monotonic()
 
         for rule in self._rules:
-            # Cooldown check
+            # Cooldown check (unlocked fast path -- avoids the rule's SQL for a
+            # rule that is clearly still in cooldown).
             last = self._last_fired.get(rule.name)
             if last is not None and (now - last) < rule.cooldown_seconds:
                 continue
@@ -240,8 +249,16 @@ class AlertManager:
                 self._record_clear(rule.name, rule.cooldown_seconds)
                 continue
 
-            # Fire
-            self._last_fired[rule.name] = now
+            # Fire -- the authoritative check-and-set. Two threads racing the
+            # unlocked check above can both reach here; only the one that wins
+            # the lock may set last_fired and proceed, or both would fire,
+            # sending the webhook twice and double-incrementing fire_count.
+            with self._state_lock:
+                last = self._last_fired.get(rule.name)
+                if last is not None and (now - last) < rule.cooldown_seconds:
+                    continue
+                self._last_fired[rule.name] = now
+
             self._log_channel.send(alert)
             if self._webhook:
                 self._webhook.send(alert)
@@ -256,12 +273,13 @@ class AlertManager:
         fire path: a transient lock at startup must not disable history for the
         whole life of a long-running server, but retrying on every silent
         evaluation would re-run DDL on the steady path."""
-        if self._store is None:
-            try:
-                self._store = AlertIncidentStore(self._conn)
-            except Exception:
-                return None
-        return self._store
+        with self._state_lock:
+            if self._store is None:
+                try:
+                    self._store = AlertIncidentStore(self._conn, lock=self._write_lock)
+                except Exception:
+                    return None
+            return self._store
 
     def _record_fire(self, alert: Alert) -> None:
         store = self._ensure_store()

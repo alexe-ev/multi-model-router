@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,6 +42,18 @@ CREATE TABLE IF NOT EXISTS feedback (
 )
 """
 
+_CREATE_UNRECORDED_STREAMS_TABLE = """
+CREATE TABLE IF NOT EXISTS unrecorded_streams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    model TEXT,
+    reason TEXT NOT NULL CHECK (reason IN (
+        'no_usage', 'provider_error', 'provider_unavailable',
+        'aborted', 'log_failed', 'budget_rejected'
+    ))
+)
+"""
+
 _MIGRATIONS = [
     "ALTER TABLE requests ADD COLUMN cascade_used INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE requests ADD COLUMN cascade_attempts INTEGER NOT NULL DEFAULT 1",
@@ -65,11 +78,17 @@ class Tracker:
 
     def __init__(self, db_path: str | Path = _DEFAULT_DB):
         self._db_path = str(db_path)
-        self._conn = sqlite3.connect(self._db_path)
+        # The streaming recorder runs on a worker thread on completion and on
+        # the MainThread on a client abort, so this connection must be usable
+        # from more than one thread. `self._write_lock` below is the guard
+        # that keeps two threads from interleaving implicit transactions on it.
+        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._write_lock = threading.Lock()
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(_CREATE_TABLE)
         self._conn.execute(_CREATE_FEEDBACK_TABLE)
+        self._conn.execute(_CREATE_UNRECORDED_STREAMS_TABLE)
         self._run_migrations()
         self._conn.commit()
 
@@ -85,27 +104,28 @@ class Tracker:
 
     def log(self, entry: RequestLog) -> int:
         """Log a request and return the inserted request_id."""
-        cur = self._conn.execute(_INSERT, (
-            entry.timestamp.isoformat(),
-            entry.prompt_hash,
-            entry.classification.complexity.value,
-            entry.classification.category.value,
-            entry.classification.confidence,
-            entry.model_used,
-            entry.completion.tokens_in,
-            entry.completion.tokens_out,
-            entry.completion.cost,
-            entry.completion.latency_ms,
-            int(entry.fallback_used),
-            int(entry.cascade_used),
-            entry.cascade_attempts,
-            entry.completion.cache_read_tokens,
-            entry.completion.cache_creation_tokens,
-            entry.experiment_id,
-            entry.variant,
-        ))
-        self._conn.commit()
-        return cur.lastrowid
+        with self._write_lock:
+            cur = self._conn.execute(_INSERT, (
+                entry.timestamp.isoformat(),
+                entry.prompt_hash,
+                entry.classification.complexity.value,
+                entry.classification.category.value,
+                entry.classification.confidence,
+                entry.model_used,
+                entry.completion.tokens_in,
+                entry.completion.tokens_out,
+                entry.completion.cost,
+                entry.completion.latency_ms,
+                int(entry.fallback_used),
+                int(entry.cascade_used),
+                entry.cascade_attempts,
+                entry.completion.cache_read_tokens,
+                entry.completion.cache_creation_tokens,
+                entry.experiment_id,
+                entry.variant,
+            ))
+            self._conn.commit()
+            return cur.lastrowid
 
     def submit_feedback(self, request_id: int, rating: int) -> None:
         """Submit feedback for a request. Overwrites if already exists.
@@ -128,13 +148,24 @@ class Tracker:
             raise ValueError(f"Request {request_id} not found")
 
         ts = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """INSERT INTO feedback (request_id, rating, timestamp)
-               VALUES (?, ?, ?)
-               ON CONFLICT(request_id) DO UPDATE SET rating = excluded.rating, timestamp = excluded.timestamp""",
-            (request_id, rating, ts),
-        )
-        self._conn.commit()
+        with self._write_lock:
+            self._conn.execute(
+                """INSERT INTO feedback (request_id, rating, timestamp)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(request_id) DO UPDATE SET rating = excluded.rating, timestamp = excluded.timestamp""",
+                (request_id, rating, ts),
+            )
+            self._conn.commit()
+
+    def record_unrecorded_stream(self, model: str | None, reason: str) -> None:
+        """Record a streamed request that could not be logged as a normal row."""
+        ts = datetime.now(timezone.utc).isoformat()
+        with self._write_lock:
+            self._conn.execute(
+                "INSERT INTO unrecorded_streams (timestamp, model, reason) VALUES (?, ?, ?)",
+                (ts, model, reason),
+            )
+            self._conn.commit()
 
     def get_feedback_stats(self) -> dict:
         """Aggregated feedback stats: per (model, complexity, category) bucket."""
@@ -200,6 +231,18 @@ class Tracker:
             for r in model_cur.fetchall()
         }
 
+        unrecorded_streams = self._conn.execute(
+            "SELECT COUNT(*) FROM unrecorded_streams"
+        ).fetchone()[0]
+        unrecorded_cur = self._conn.execute("""
+            SELECT reason, COUNT(*) as count
+            FROM unrecorded_streams
+            GROUP BY reason
+        """)
+        unrecorded_streams_by_reason = {
+            r["reason"]: r["count"] for r in unrecorded_cur.fetchall()
+        }
+
         return {
             "total_requests": row["total_requests"],
             "total_cost": round(row["total_cost"], 6),
@@ -208,11 +251,17 @@ class Tracker:
             "total_tokens_out": row["total_tokens_out"],
             "fallback_count": row["fallback_count"],
             "model_distribution": model_distribution,
+            "unrecorded_streams": unrecorded_streams,
+            "unrecorded_streams_by_reason": unrecorded_streams_by_reason,
         }
 
     @property
     def connection(self) -> sqlite3.Connection:
         return self._conn
+
+    @property
+    def write_lock(self) -> threading.Lock:
+        return self._write_lock
 
     def close(self) -> None:
         self._conn.close()

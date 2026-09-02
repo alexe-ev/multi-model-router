@@ -278,11 +278,15 @@ def stats(db, as_json, detailed):
         return
 
     click.secho("mmrouter stats", bold=True)
-    click.echo(f"  Requests:      {data['total_requests']}")
-    click.echo(f"  Total cost:    ${data['total_cost']:.6f}")
-    click.echo(f"  Avg latency:   {data['avg_latency_ms']:.0f}ms")
-    click.echo(f"  Tokens in/out: {data['total_tokens_in']}/{data['total_tokens_out']}")
-    click.echo(f"  Fallbacks:     {data['fallback_count']}")
+    click.echo(f"  Requests:           {data['total_requests']}")
+    click.echo(f"  Total cost:         ${data['total_cost']:.6f}")
+    click.echo(f"  Avg latency:        {data['avg_latency_ms']:.0f}ms")
+    click.echo(f"  Tokens in/out:      {data['total_tokens_in']}/{data['total_tokens_out']}")
+    click.echo(f"  Fallbacks:          {data['fallback_count']}")
+    click.echo(f"  Unrecorded streams: {data['unrecorded_streams']}")
+    if data["unrecorded_streams"] > 0:
+        for reason, count in data["unrecorded_streams_by_reason"].items():
+            click.echo(f"    {reason}: {count}")
 
     if data["model_distribution"]:
         click.echo()
