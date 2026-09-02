@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from mmrouter.dashboard.app import create_app
 from mmrouter.tracker.logger import Tracker, _CREATE_TABLE, _INSERT
+from mmrouter.dashboard.app import _open_conn
 
 
 def _seed_db(db_path):
@@ -56,6 +57,16 @@ class TestStatsEndpoint:
         assert r.status_code == 200
         data = r.json()
         assert data["total_requests"] == 0
+
+    def test_unrecorded_streams_on_a_dashboard_created_db(self, empty_client):
+        """MMR-3 self-check 9: the dashboard's own DDL (not Tracker.__init__)
+        creates unrecorded_streams too, so /api/stats does not 500 on a
+        database the dashboard opened first."""
+        r = empty_client.get("/api/stats")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["unrecorded_streams"] == 0
+        assert data["unrecorded_streams_by_reason"] == {}
 
 
 class TestDailyEndpoint:
@@ -126,3 +137,43 @@ class TestModelsEndpoint:
         assert "count" in data[0]
         assert "total_cost" in data[0]
         assert "avg_latency_ms" in data[0]
+
+
+class TestDashboardOpenedDatabaseIsWritable:
+    """MMR-3: the dashboard opens the DB with its own `_open_conn`, which creates
+    a subset of the tables the Tracker creates. Whichever process runs first, the
+    other must still work. The reverse direction (Tracker first, dashboard second)
+    is covered by every other test in this file; this is the uncovered one.
+    """
+
+    def test_tracker_can_write_a_database_the_dashboard_created_first(self, tmp_path):
+        db = tmp_path / "dash_first.db"
+
+        conn = _open_conn(str(db))
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        conn.close()
+        assert "unrecorded_streams" in tables
+
+        tracker = Tracker(db)
+        tracker.record_unrecorded_stream(None, "budget_rejected")
+        stats = tracker.get_stats()
+        tracker.close()
+
+        assert stats["unrecorded_streams"] == 1
+        assert stats["unrecorded_streams_by_reason"] == {"budget_rejected": 1}
+
+    def test_dashboard_serves_stats_for_a_database_that_predates_the_table(self, tmp_path):
+        """A DB created before MMR-3 has no unrecorded_streams; opening it with
+        the current code must add the table rather than 500 on /api/stats."""
+        db = tmp_path / "legacy.db"
+        conn = sqlite3.connect(db)
+        conn.execute(_CREATE_TABLE)
+        conn.commit()
+        conn.close()
+
+        client = TestClient(create_app(str(db)))
+        resp = client.get("/api/stats")
+        assert resp.status_code == 200
+        assert resp.json()["unrecorded_streams"] == 0

@@ -2,7 +2,7 @@
 
 import os
 from typing import Iterator
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -530,3 +530,207 @@ class TestMessagePassthrough:
         last_call = provider.calls[-1]
         messages = last_call[1]
         assert len(messages) == 3
+
+
+def _write_budget_config(tmp_path, hard_limit_action="reject"):
+    """Same route matrix as _write_config, plus a budget already over its limit."""
+    cfg = tmp_path / "budget_config.yaml"
+    cfg.write_text(f"""
+version: "1"
+routes:
+  simple:
+    factual:
+      model: claude-haiku-4-5-20251001
+      fallbacks:
+        - claude-sonnet-4-6
+    reasoning:
+      model: claude-haiku-4-5-20251001
+      fallbacks:
+        - claude-sonnet-4-6
+    creative:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+    code:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+  medium:
+    factual:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-haiku-4-5-20251001
+    reasoning:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+    creative:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+    code:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+  complex:
+    factual:
+      model: claude-sonnet-4-6
+      fallbacks:
+        - claude-opus-4-6
+    reasoning:
+      model: claude-opus-4-6
+      fallbacks:
+        - claude-sonnet-4-6
+    creative:
+      model: claude-opus-4-6
+      fallbacks:
+        - claude-sonnet-4-6
+    code:
+      model: claude-opus-4-6
+      fallbacks:
+        - claude-sonnet-4-6
+classifier:
+  strategy: rules
+  threshold: "0.7"
+provider:
+  timeout_ms: 30000
+  max_retries: 0
+budget:
+  enabled: true
+  daily_limit: 1.0
+  hard_limit_action: {hard_limit_action}
+""")
+    return cfg
+
+
+def _seed_spend(db_path, spend=5.0):
+    """Insert a request already spending past the daily_limit above."""
+    from datetime import datetime, timezone
+
+    tracker = Tracker(db_path)
+    tracker.connection.execute(
+        """INSERT INTO requests
+           (timestamp, prompt_hash, complexity, category, confidence,
+            model, tokens_in, tokens_out, cost, latency_ms, fallback_used,
+            cascade_used, cascade_attempts)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (datetime.now(timezone.utc).isoformat(), "seed", "simple", "factual", 0.9,
+         "claude-haiku-4-5-20251001", 10, 20, spend, 100.0, 0, 0, 1),
+    )
+    tracker.connection.commit()
+    tracker.close()
+
+
+class TestBudgetRejection:
+    """MMR-3 self-check 7 & 16: a budget-rejected request is a clean refusal
+    on both API paths, never an unhandled 500."""
+
+    def test_streaming_budget_rejection_sends_error_event(self, tmp_path):
+        """Self-check 7: HTTP 200, an error frame, [DONE], role frame first --
+        the same sequence as the existing provider-failure test."""
+        import json as json_mod
+
+        cfg = _write_budget_config(tmp_path)
+        db_path = tmp_path / "test.db"
+        _seed_spend(db_path)
+        app = create_app(config_path=str(cfg), db_path=str(db_path))
+
+        with TestClient(app) as client:
+            app.state.router._provider = MockProvider()
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("MMROUTER_API_KEY", None)
+                resp = client.post(
+                    "/v1/chat/completions",
+                    json={
+                        "messages": [{"role": "user", "content": "What is the capital of France?"}],
+                        "stream": True,
+                    },
+                )
+
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers["content-type"]
+
+        lines = resp.text.strip().split("\n\n")
+        assert lines[-1] == "data: [DONE]"
+
+        first_data = json_mod.loads(lines[0][6:])
+        assert first_data["choices"][0]["delta"]["role"] == "assistant"
+
+        has_error = False
+        for line in lines:
+            if line.startswith("data: ") and line != "data: [DONE]":
+                data = json_mod.loads(line[6:])
+                if "error" in data:
+                    has_error = True
+        assert has_error
+
+    def test_non_streaming_budget_rejection_returns_502(self, tmp_path):
+        """Self-check 16: non-stream budget rejection returns 502 with the
+        budget message, not a 500."""
+        cfg = _write_budget_config(tmp_path)
+        db_path = tmp_path / "test.db"
+        _seed_spend(db_path)
+        app = create_app(config_path=str(cfg), db_path=str(db_path))
+
+        with TestClient(app) as client:
+            app.state.router._provider = MockProvider()
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("MMROUTER_API_KEY", None)
+                resp = client.post(
+                    "/v1/chat/completions",
+                    json={"messages": [{"role": "user", "content": "What is the capital of France?"}]},
+                )
+
+        assert resp.status_code == 502
+        assert "budget" in resp.json()["detail"].lower()
+
+
+class TestStreamingMidStreamProviderError:
+    """MMR-3 self-check 15: a raw litellm exception raised while iterating (not
+    while opening) reaches the client the same way a translated ProviderError
+    does -- an error frame plus [DONE], not a truncated stream (closes KN-151)."""
+
+    def test_raw_exception_mid_stream_still_ends_the_sse_stream_cleanly(self, tmp_path):
+        import json as json_mod
+
+        cfg = _write_config(tmp_path)
+        app = create_app(config_path=str(cfg), db_path=str(tmp_path / "test.db"))
+
+        def _bad_chunks():
+            chunk = MagicMock()
+            chunk.choices = [MagicMock()]
+            chunk.choices[0].delta.content = "partial"
+            chunk.choices[0].finish_reason = None
+            chunk.model = "claude-haiku-4-5-20251001"
+            chunk.usage = None
+            yield chunk
+            raise RuntimeError("connection dropped mid-stream")
+
+        with TestClient(app) as client:
+            # Do NOT swap in MockProvider here: the whole point is exercising
+            # the real LiteLLMProvider's mid-stream translation (step 3c).
+            with patch("litellm.completion", return_value=_bad_chunks()):
+                with patch.dict(os.environ, {}, clear=False):
+                    os.environ.pop("MMROUTER_API_KEY", None)
+                    resp = client.post(
+                        "/v1/chat/completions",
+                        json={
+                            "messages": [{"role": "user", "content": "What is the capital of France?"}],
+                            "stream": True,
+                        },
+                    )
+
+        assert resp.status_code == 200
+        lines = resp.text.strip().split("\n\n")
+        assert lines[-1] == "data: [DONE]"
+
+        first_data = json_mod.loads(lines[0][6:])
+        assert first_data["choices"][0]["delta"]["role"] == "assistant"
+
+        has_error = False
+        for line in lines:
+            if line.startswith("data: ") and line != "data: [DONE]":
+                data = json_mod.loads(line[6:])
+                if "error" in data:
+                    has_error = True
+        assert has_error

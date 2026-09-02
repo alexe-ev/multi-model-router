@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -66,27 +67,30 @@ def _row_to_dict(row) -> dict:
 class AlertIncidentStore:
     """Durable alert history. Owns the alert_incidents table."""
 
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: sqlite3.Connection, *, lock=None):
         self._conn = conn
-        self._conn.execute(_CREATE_INCIDENTS_TABLE)
-        self._conn.execute(_CREATE_LIVE_INDEX)
-        self._conn.commit()
+        self._lock = lock or contextlib.nullcontext()
+        with self._lock:
+            self._conn.execute(_CREATE_INCIDENTS_TABLE)
+            self._conn.execute(_CREATE_LIVE_INDEX)
+            self._conn.commit()
 
     def record_fire(self, alert: Alert) -> None:
         """Open a live incident for this rule, or extend the existing one."""
         now = _now_iso()
-        self._conn.execute(
-            _UPSERT_FIRE,
-            (
-                alert.rule_name,
-                alert.severity,
-                alert.message,
-                json.dumps(alert.details),
-                now,
-                now,
-            ),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                _UPSERT_FIRE,
+                (
+                    alert.rule_name,
+                    alert.severity,
+                    alert.message,
+                    json.dumps(alert.details),
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
 
     def clear(self, rule_name: str, min_age_seconds: float = 300.0) -> bool:
         """Close the live incident for this rule. Returns True if one was closed.
@@ -110,19 +114,20 @@ class AlertIncidentStore:
         cutoff = (
             datetime.now(timezone.utc) - timedelta(seconds=min_age_seconds)
         ).isoformat()
-        row = self._conn.execute(
-            "SELECT id FROM alert_incidents "
-            "WHERE rule_name = ? AND cleared_at IS NULL AND last_seen <= ? LIMIT 1",
-            (rule_name, cutoff),
-        ).fetchone()
-        if row is None:
-            return False
-        self._conn.execute(
-            "UPDATE alert_incidents SET cleared_at = ? WHERE id = ? AND cleared_at IS NULL",
-            (_now_iso(), row[0]),
-        )
-        self._conn.commit()
-        return True
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM alert_incidents "
+                "WHERE rule_name = ? AND cleared_at IS NULL AND last_seen <= ? LIMIT 1",
+                (rule_name, cutoff),
+            ).fetchone()
+            if row is None:
+                return False
+            self._conn.execute(
+                "UPDATE alert_incidents SET cleared_at = ? WHERE id = ? AND cleared_at IS NULL",
+                (_now_iso(), row[0]),
+            )
+            self._conn.commit()
+            return True
 
     def list_incidents(self, limit: int = 200) -> list[dict]:
         """Incidents by most recent activity first."""
@@ -143,10 +148,11 @@ class AlertIncidentStore:
 
     def set_handled(self, incident_id: int, handled: bool) -> dict | None:
         """Mark or unmark. Returns the updated row, or None for an unknown id."""
-        self._conn.execute(
-            "UPDATE alert_incidents SET handled_at = ? WHERE id = ?",
-            (_now_iso() if handled else None, incident_id),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE alert_incidents SET handled_at = ? WHERE id = ?",
+                (_now_iso() if handled else None, incident_id),
+            )
+            self._conn.commit()
         row = self._conn.execute(_SELECT + " WHERE id = ?", (incident_id,)).fetchone()
         return _row_to_dict(row) if row is not None else None

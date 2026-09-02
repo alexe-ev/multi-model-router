@@ -46,6 +46,20 @@ class StreamChunk(BaseModel):
     finish_reason: str | None = None
 
 
+class StreamUsage(BaseModel):
+    """What a finished stream cost, as the provider reported it.
+
+    Absence is a value: a provider that sent no usage yields None, never a
+    zero-filled instance. See ProviderBase.stream_messages.
+    """
+
+    tokens_in: int
+    tokens_out: int
+    cost: float
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+
+
 class StreamRouteResult(BaseModel):
     """Result from route_messages_stream: classification + model selection + chunk iterator."""
 

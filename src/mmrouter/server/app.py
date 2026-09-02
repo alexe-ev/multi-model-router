@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -13,6 +14,7 @@ from fastapi.responses import StreamingResponse
 
 from mmrouter import __version__
 from mmrouter.providers.litellm_provider import ProviderError
+from mmrouter.router.budget import BudgetExceededError
 from mmrouter.router.engine import Router
 from mmrouter.server.auth import verify_api_key
 from mmrouter.server.models import (
@@ -29,6 +31,8 @@ from mmrouter.server.models import (
     ModelListResponse,
     UsageInfo,
 )
+
+logger = logging.getLogger("mmrouter.server")
 
 
 def create_app(
@@ -189,9 +193,27 @@ def create_app(
 
                 return response
 
-        except ProviderError as e:
-            raise HTTPException(status_code=502, detail=f"Upstream provider error: {e}")
-        except (ValueError, RuntimeError) as e:
+        except ProviderError:
+            # The provider's own text is logged, never returned: it can embed
+            # request detail (a Gemini URL carries the API key in its query
+            # string), and this response goes to the client.
+            logger.warning(
+                "Provider error serving %s (stream=False)", body.model, exc_info=True
+            )
+            raise HTTPException(
+                status_code=502, detail=f"Upstream provider error for {body.model}"
+            )
+        except RuntimeError:
+            # Carries "Last error: <ProviderError>", so it has the same reach.
+            logger.warning(
+                "No model could serve %s (stream=False)", body.model, exc_info=True
+            )
+            raise HTTPException(
+                status_code=502, detail=f"No model could serve the request for {body.model}"
+            )
+        except (ValueError, BudgetExceededError) as e:
+            # Both messages are ours, not the provider's. AC10 depends on the
+            # budget message reaching the client intact.
             raise HTTPException(status_code=502, detail=str(e))
 
     def _handle_stream(
@@ -223,10 +245,36 @@ def create_app(
                 model = body.model
                 extra_headers = {}
 
-        except ProviderError as e:
-            raise HTTPException(status_code=502, detail=f"Upstream provider error: {e}")
-        except (ValueError, RuntimeError) as e:
+        except ProviderError:
+            logger.warning(
+                "Provider error opening stream for %s", body.model, exc_info=True
+            )
+            raise HTTPException(
+                status_code=502, detail=f"Upstream provider error for {body.model}"
+            )
+        except RuntimeError:
+            logger.warning(
+                "No model could serve %s (stream=True)", body.model, exc_info=True
+            )
+            raise HTTPException(
+                status_code=502, detail=f"No model could serve the request for {body.model}"
+            )
+        except ValueError as e:
             raise HTTPException(status_code=502, detail=str(e))
+        except BudgetExceededError as e:
+            # `except ... as e` deletes `e` when this block ends (Python 3
+            # semantics), and `chunks()` below is only iterated later, inside
+            # `generate()` -- so the exception is rebound to a name that
+            # survives to be captured by the closure.
+            budget_error = e
+
+            def chunks():  # noqa: F811 -- the budget-rejected stream has no chunks
+                raise budget_error
+                yield  # unreachable; makes this a generator
+
+            chunks = chunks()
+            model = body.model or "auto"
+            extra_headers = {}
 
         def generate():
             # First chunk with role
@@ -256,8 +304,22 @@ def create_app(
                         ],
                     )
                     yield f"data: {chunk_obj.model_dump_json()}\n\n"
-            except (ProviderError, RuntimeError) as e:
+            except BudgetExceededError as e:
+                # Our own message (daily limit and spend) -- AC10 sends it whole.
                 error_data = json.dumps({"error": {"message": str(e), "type": "server_error"}})
+                yield f"data: {error_data}\n\n"
+            except (ProviderError, RuntimeError):
+                # The provider's text stays in the log; the client gets the shape
+                # AC9 promises with none of the upstream detail.
+                logger.warning("Stream failed for %s", model, exc_info=True)
+                error_data = json.dumps(
+                    {
+                        "error": {
+                            "message": f"Upstream provider error for {model}",
+                            "type": "server_error",
+                        }
+                    }
+                )
                 yield f"data: {error_data}\n\n"
 
             yield "data: [DONE]\n\n"
